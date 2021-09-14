@@ -2,3 +2,4 @@
 #![deny(clippy::correctness)]
 
 pub mod channel;
+pub mod config;
