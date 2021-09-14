@@ -7,3 +7,7 @@ name = "xfce-config"
 version = "0.1.0"
 authors = ["Daniel Beckwith <djbsnx@gmail.com>"]
 edition = "2018"
+
+[dependencies]
+anyhow = "1.0.43"
+quick-xml = "0.22.0"
