@@ -76,6 +76,18 @@ config_types_proc_macro::config_types! {
                 };
             }
             | {
+                r#type: "applications-menu";
+                appearance: {
+                    show_generic_names: bool;
+                    show_menu_icons: bool;
+                    show_tooltips: bool;
+                    show_button_title: bool;
+                    button_title: str;
+                    button_icon: str;
+                };
+                // TODO: support custom menu file
+            }
+            | {
                 r#type: "whisker-menu";
                 appearance: {
                     panel_button: {

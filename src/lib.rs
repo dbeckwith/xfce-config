@@ -162,6 +162,7 @@ fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
         ConfigPanelItem::Launcher(_) => "launcher",
         ConfigPanelItem::Separator(_) => "separator",
         ConfigPanelItem::ActionButtons(_) => "actions",
+        ConfigPanelItem::ApplicationsMenu(_) => "applicationsmenu",
         ConfigPanelItem::WhiskerMenu(_) => "whiskermenu",
     }
 }
@@ -179,6 +180,9 @@ fn plugin_props(
         },
         ConfigPanelItem::ActionButtons(action_buttons) => {
             plugin_action_buttons_props(plugin_id, action_buttons)
+        },
+        ConfigPanelItem::ApplicationsMenu(applications_menu) => {
+            plugin_applications_menu_props(plugin_id, applications_menu)
         },
         ConfigPanelItem::WhiskerMenu(_) => todo!(),
     }
@@ -323,6 +327,53 @@ fn plugin_action_buttons_props(
                         Value::bool(*show_confirmation_dialog),
                     )
                 }
+            ),
+        ],
+        Vec::new(),
+    )
+}
+
+fn plugin_applications_menu_props(
+    _plugin_id: i32,
+    applications_menu: &ConfigPanelItemApplicationsMenu,
+) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+    (
+        opt_vec![
+            get_opt!(&applications_menu.appearance.show_generic_names).map(
+                |show_generic_names| Property::new(
+                    "show-generic-names",
+                    Value::bool(*show_generic_names)
+                )
+            ),
+            get_opt!(&applications_menu.appearance.show_menu_icons).map(
+                |show_menu_icons| Property::new(
+                    "show-menu-icons",
+                    Value::bool(*show_menu_icons)
+                )
+            ),
+            get_opt!(&applications_menu.appearance.show_tooltips).map(
+                |show_tooltips| Property::new(
+                    "show-tooltips",
+                    Value::bool(*show_tooltips)
+                )
+            ),
+            get_opt!(&applications_menu.appearance.show_button_title).map(
+                |show_button_title| Property::new(
+                    "show-button-title",
+                    Value::bool(*show_button_title)
+                )
+            ),
+            get_opt!(&applications_menu.appearance.button_title).map(
+                |button_title| Property::new(
+                    "button-title",
+                    Value::string(button_title.clone())
+                )
+            ),
+            get_opt!(&applications_menu.appearance.button_icon).map(
+                |button_icon| Property::new(
+                    "button-icon",
+                    Value::string(button_icon.clone())
+                )
             ),
         ],
         Vec::new(),
