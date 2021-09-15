@@ -37,34 +37,23 @@ macro_rules! opt_vec {
 }
 
 macro_rules! get_opt {
-    ($first:ident . $second:ident $(. $rest:ident)*) => {
-        get_opt!(
-            @build
-            ;
-            $first.$second;
-            $second;
-            $($rest)*
-        )
-    };
     (& $first:ident . $second:ident $(. $rest:ident)*) => {
         get_opt!(
             @build
-            as_ref;
             $first.$second.as_ref();
             $second;
             $($rest)*
         )
     };
-    (@build $($as_ref:ident)?; $expr:expr; $prev:ident; $head:ident $($rest:ident)*) => {
+    (@build $expr:expr; $prev:ident; $head:ident $($rest:ident)*) => {
         get_opt!(
             @build
-            $($as_ref)?;
-            $expr.and_then(|$prev| $prev.$head$(.$as_ref())?);
+            $expr.and_then(|$prev| $prev.$head.as_ref());
             $head;
             $($rest)*
         )
     };
-    (@build $($as_ref:ident)?; $expr:expr; $prev:ident;) => {
+    (@build $expr:expr; $prev:ident;) => {
         $expr
     };
 }
@@ -97,12 +86,12 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
                     ),
                 )
             }),
-            get_opt!(config.panels).and_then(|panels| {
+            get_opt!(&config.panels).and_then(|panels| {
                 let plugins = plugin_ids
                     .zip(
-                        panels.into_iter().flat_map(|panel| {
-                            panel.items.into_iter().flatten()
-                        }),
+                        panels
+                            .iter()
+                            .flat_map(|panel| panel.items.iter().flatten()),
                     )
                     .map(|(plugin_id, plugin)| {
                         Property::new(
@@ -170,7 +159,7 @@ fn panel_props(
 
 fn plugin_props(
     plugin_id: i32,
-    plugin: ConfigPanelItem,
+    plugin: &ConfigPanelItem,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
     match plugin {
         ConfigPanelItem::Launcher(launcher) => {
@@ -188,7 +177,7 @@ fn plugin_props(
 
 fn plugin_launcher_props(
     plugin_id: i32,
-    launcher: ConfigPanelItemLauncher,
+    launcher: &ConfigPanelItemLauncher,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
     // TODO: better item_ids scheme
     // needs to be globally incrementing
@@ -208,22 +197,24 @@ fn plugin_launcher_props(
                         .collect(),
                 ),
             )),
-            get_opt!(launcher.show_tooltips).map(
-                |show_tooltips| Property::new(
-                    "disable-tooltips",
-                    Value::bool(!show_tooltips),
-                )
-            ),
-            get_opt!(launcher.label_instead_of_icon).map(
+            get_opt!(&launcher.show_tooltips).map(|show_tooltips| {
+                Property::new("disable-tooltips", Value::bool(!show_tooltips))
+            }),
+            get_opt!(&launcher.label_instead_of_icon).map(
                 |label_instead_of_icon| Property::new(
                     "show-label",
-                    Value::bool(label_instead_of_icon),
+                    Value::bool(*label_instead_of_icon),
                 )
             ),
-            get_opt!(launcher.show_last_used_item).map(|show_last_used_item| {
-                Property::new("move-first", Value::bool(show_last_used_item))
-            }),
-            get_opt!(launcher.arrow_position).map(|arrow_position| {
+            get_opt!(&launcher.show_last_used_item).map(
+                |show_last_used_item| {
+                    Property::new(
+                        "move-first",
+                        Value::bool(*show_last_used_item),
+                    )
+                }
+            ),
+            get_opt!(&launcher.arrow_position).map(|arrow_position| {
                 Property::new(
                     "arrow-position",
                     Value::uint(arrow_position.discrim()),
@@ -231,7 +222,7 @@ fn plugin_launcher_props(
             }),
         ],
         item_ids
-            .zip(launcher.items.into_iter().flatten())
+            .zip(launcher.items.iter().flatten())
             .map(|(item_id, item)| match item {
                 ConfigPanelItemLauncherItem::Str(s) => {
                     // TODO: support URL items
@@ -255,16 +246,16 @@ fn plugin_launcher_props(
 
 fn plugin_separator_props(
     _plugin_id: i32,
-    separator: ConfigPanelItemSeparator,
+    separator: &ConfigPanelItemSeparator,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
     (
         opt_vec![
-            get_opt!(separator.style).map(|style| Property::new(
+            get_opt!(&separator.style).map(|style| Property::new(
                 "style",
                 Value::uint(style.discrim()),
             )),
-            get_opt!(separator.expand)
-                .map(|expand| Property::new("expand", Value::bool(expand))),
+            get_opt!(&separator.expand)
+                .map(|expand| Property::new("expand", Value::bool(*expand))),
         ],
         Vec::new(),
     )
@@ -272,27 +263,32 @@ fn plugin_separator_props(
 
 fn plugin_action_buttons_props(
     _plugin_id: i32,
-    action_buttons: ConfigPanelItemActionButtons,
+    action_buttons: &ConfigPanelItemActionButtons,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
     (
         opt_vec![
-            get_opt!(action_buttons.general.appearance).map(|appearance| {
+            get_opt!(&action_buttons.general.appearance).map(|appearance| {
                 Property::new("appearance", Value::uint(appearance.discrim()))
             }),
-            get_opt!(action_buttons.general.title).map(|title| Property::new(
+            get_opt!(&action_buttons.general.title).map(|title| Property::new(
                 "title",
                 Value::uint(title.discrim()),
             )),
-            get_opt!(action_buttons.general.custom_title).map(|custom_title| {
-                Property::new("custom-title", Value::string(custom_title))
-            }),
-            get_opt!(action_buttons.actions.items).map(|items| {
+            get_opt!(&action_buttons.general.custom_title).map(
+                |custom_title| {
+                    Property::new(
+                        "custom-title",
+                        Value::string(custom_title.clone()),
+                    )
+                }
+            ),
+            get_opt!(&action_buttons.actions.items).map(|items| {
                 macro_rules! item {
                     ($prop:ident, $name:literal) => {
-                        get_opt!(items.$prop).map(|$prop| {
+                        get_opt!(&items.$prop).map(|$prop| {
                             Value::string(format!(
                                 "{}{}",
-                                if $prop { "+" } else { "-" },
+                                if *$prop { "+" } else { "-" },
                                 $name
                             ))
                         })
@@ -316,11 +312,11 @@ fn plugin_action_buttons_props(
                     ]),
                 )
             }),
-            get_opt!(action_buttons.actions.show_confirmation_dialog).map(
+            get_opt!(&action_buttons.actions.show_confirmation_dialog).map(
                 |show_confirmation_dialog| {
                     Property::new(
                         "ask-confirmation",
-                        Value::bool(show_confirmation_dialog),
+                        Value::bool(*show_confirmation_dialog),
                     )
                 }
             ),
