@@ -5,12 +5,21 @@ pub mod channel;
 pub mod config;
 
 use self::{channel::*, config::*};
+use std::path::PathBuf;
 
-pub fn channel_from_config(config: Config) -> Channel<'static> {
+pub struct ConfigFile {
+    pub path: PathBuf,
+    pub contents: Cfg,
+}
+
+pub struct Cfg {}
+
+pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
     let Config { panels } = config;
+    let mut config_files = Vec::new();
     let panel_ids = 0..;
     let plugin_ids = 1..;
-    Channel::new(
+    let channel = Channel::new(
         "xfce4-panel",
         "1.0",
         vec![
@@ -42,7 +51,13 @@ pub fn channel_from_config(config: Config) -> Channel<'static> {
                                 format!("plugin-{}", plugin_id),
                                 Value::new(
                                     TypedValue::String(plugin.r#type().into()),
-                                    plugin_props(plugin_id, plugin),
+                                    {
+                                        let (props, plugin_config_files) =
+                                            plugin_props(plugin_id, plugin);
+                                        config_files
+                                            .extend(plugin_config_files);
+                                        props
+                                    },
                                 ),
                             )
                         })
@@ -50,7 +65,8 @@ pub fn channel_from_config(config: Config) -> Channel<'static> {
                 ),
             ),
         ],
-    )
+    );
+    (channel, config_files)
 }
 
 fn panel_props(
@@ -96,6 +112,6 @@ fn panel_props(
 fn plugin_props(
     plugin_id: i32,
     plugin: ConfigPanelItem,
-) -> Vec<Property<'static>> {
+) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
     todo!()
 }
