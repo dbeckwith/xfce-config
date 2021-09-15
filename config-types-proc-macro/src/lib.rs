@@ -409,7 +409,7 @@ impl EmitTypeDecls for TypeStruct {
             ty.emit_type_decls(path, type_decls)?;
             let field = syn::Field::parse_named
                 .parse2(quote! {
-                    pub #name: #ty_name
+                    pub #name: Option<#ty_name>
                 })
                 .unwrap();
             decl_fields.push(field);
