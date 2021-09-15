@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
-members = []
+members = [
+    ".",
+    "./config-types-proc-macro",
+]
 
 [package]
 name = "xfce-config"
@@ -10,4 +13,5 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0.43"
+config-types-proc-macro = { path = "./config-types-proc-macro" }
 quick-xml = "0.22.0"

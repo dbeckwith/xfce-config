@@ -1,28 +1,28 @@
-config_types! {
+config_types_proc_macro::config_types! {
     panels: [{
         display: {
             general: {
-                mode: "horizontal" | "vertical" | "deskbar",
+                mode: ("horizontal" | "vertical" | "deskbar"),
                 locked: bool,
-                auto_hide: "never" | "auto" | "always",
+                auto_hide: ("never" | "auto" | "always"),
                 reserve_border_space: bool,
             },
             measurements: {
-                row_size: u32,
-                row_count: u32,
-                length: u32,
+                row_size: uint,
+                row_count: uint,
+                length: uint,
                 auto_size: bool,
             }
         },
         appearence: {
             // TODO: panel appearence
         },
-        items: [
+        items: [(
             | {
                 r#type: "whiskermenu",
                 appearence: {
                     panel_button: {
-                        display: "icon" | "title" | "icon-and-title",
+                        display: ("icon" | "title" | "icon-and-title"),
                         title: str,
                         icon: str,
                         single_row: bool,
@@ -33,7 +33,7 @@ config_types! {
                         show_app_descriptions: bool,
                         show_app_tooltips: bool,
                         show_menu_hierarchy: bool,
-                        item_icon_size:
+                        item_icon_size: (
                             | "none"
                             | "very-small"
                             | "smaller"
@@ -41,8 +41,9 @@ config_types! {
                             | "normal"
                             | "large"
                             | "larger"
-                            | "very-large",
-                        category_icon_size:
+                            | "very-large"
+                        ),
+                        category_icon_size: (
                             | "none"
                             | "very-small"
                             | "smaller"
@@ -50,10 +51,11 @@ config_types! {
                             | "normal"
                             | "large"
                             | "larger"
-                            | "very-large",
-                        background_opacity: u32,
-                        width: u32,
-                        height: u32,
+                            | "very-large"
+                        ),
+                        background_opacity: uint,
+                        width: uint,
+                        height: uint,
                     },
                 },
                 behavior: {
@@ -64,7 +66,7 @@ config_types! {
                         categories_next_to_panel_button: bool,
                     },
                     recently_used: {
-                        max_items: u32,
+                        max_items: uint,
                         ignore_favorites: bool,
                         always_show: bool,
                     },
@@ -104,7 +106,7 @@ config_types! {
             }
             | {
                 r#type: "launcher",
-                items: [
+                items: [(
                     | str
                     | {
                         name: str,
@@ -114,18 +116,19 @@ config_types! {
                         startup_notification: bool,
                         run_in_terminal: bool,
                     }
-                ],
+                )],
                 show_tooltips: bool,
                 label_instead_of_icon: bool,
                 show_last_used_item: bool,
-                arrow_position:
+                arrow_position: (
                     | "default"
                     | "north"
                     | "west"
                     | "east"
                     | "south"
-                    | "inside-button",
+                    | "inside-button"
+                ),
             }
-        ],
+        )],
     }],
 }
