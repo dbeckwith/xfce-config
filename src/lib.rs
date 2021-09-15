@@ -191,6 +191,9 @@ fn plugin_props(
         ConfigPanelItem::Launcher(launcher) => {
             plugin_launcher_props(plugin_id, launcher)
         },
+        ConfigPanelItem::Separator(separator) => {
+            plugin_separator_props(plugin_id, separator)
+        },
         ConfigPanelItem::Whiskermenu(_) => todo!(),
     }
 }
@@ -266,5 +269,27 @@ fn plugin_launcher_props(
                 },
             })
             .collect(),
+    )
+}
+
+fn plugin_separator_props(
+    _plugin_id: i32,
+    separator: ConfigPanelItemSeparator,
+) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+    (
+        opt_props![
+            get_opt!(separator.style).map(|style| Property::new(
+                "style",
+                Value::uint(match style {
+                    ConfigPanelItemSeparatorStyle::Transparent => 0,
+                    ConfigPanelItemSeparatorStyle::Separator => 1,
+                    ConfigPanelItemSeparatorStyle::Handle => 2,
+                    ConfigPanelItemSeparatorStyle::Dots => 3,
+                })
+            )),
+            get_opt!(separator.expand)
+                .map(|expand| Property::new("expand", Value::bool(expand))),
+        ],
+        Vec::new(),
     )
 }

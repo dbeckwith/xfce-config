@@ -45,6 +45,11 @@ config_types_proc_macro::config_types! {
                 ),
             }
             | {
+                r#type: "separator",
+                style: ("transparent" | "separator" | "handle" | "dots"),
+                expand: bool,
+            }
+            | {
                 r#type: "whiskermenu",
                 appearence: {
                     panel_button: {

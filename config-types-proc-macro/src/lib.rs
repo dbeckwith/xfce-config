@@ -547,25 +547,33 @@ fn emit_enum_struct(
         discrim_values
             .push((variant_name.clone(), variant_name_lit_str.clone()));
         let path = path.clone().push(variant_name.clone());
-        TypeStruct {
-            brace_token,
-            fields: fields.collect(),
+        let fields = fields.collect::<Punctuated<_, _>>();
+        if fields.is_empty() {
+            let variant = parse_quote! {
+                #variant_name
+            };
+            decl_variants.push(variant);
+        } else {
+            TypeStruct {
+                brace_token,
+                fields,
+            }
+            .emit_type_decls(path.clone(), type_decls)?;
+            let variant_ty: syn::Type = {
+                let ty_name = path.join();
+                parse_quote!(#ty_name)
+            };
+            let variant = parse_quote! {
+                #variant_name(#variant_ty)
+            };
+            decl_variants.push(variant);
         }
-        .emit_type_decls(path.clone(), type_decls)?;
-        let variant_ty: syn::Type = {
-            let ty_name = path.join();
-            parse_quote!(#ty_name)
-        };
-        let variant = parse_quote! {
-            #variant_name(#variant_ty)
-        };
-        decl_variants.push(variant);
     }
     let discrim_field_name = discrim_field_name.unwrap();
     let match_arms = discrim_values.into_iter().map(
         |(variant_name, variant_name_lit_str)| -> Arm {
             parse_quote! {
-                Self::#variant_name(_) => #variant_name_lit_str
+                Self::#variant_name { .. } => #variant_name_lit_str
             }
         },
     );
