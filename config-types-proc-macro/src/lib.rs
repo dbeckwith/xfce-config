@@ -25,11 +25,10 @@ use syn::{
 #[proc_macro]
 #[proc_macro_error]
 pub fn config_types(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let config_fields =
-        match Punctuated::<Field, Token![,]>::parse_terminated.parse(input) {
-            Ok(config_fields) => config_fields,
-            Err(error) => return error.to_compile_error().into(),
-        };
+    let config_fields = match Punctuated::parse_terminated.parse(input) {
+        Ok(config_fields) => config_fields,
+        Err(error) => return error.to_compile_error().into(),
+    };
     let config_type = Type::Struct(TypeStruct {
         brace_token: Brace::default(),
         fields: config_fields,
@@ -139,7 +138,7 @@ struct TypeArray {
 #[derive(Debug)]
 struct TypeStruct {
     brace_token: Brace,
-    fields: Punctuated<Field, Token![,]>,
+    fields: Punctuated<Field, Token![;]>,
 }
 
 #[derive(Debug)]
