@@ -19,6 +19,31 @@ config_types_proc_macro::config_types! {
         },
         items: [(
             | {
+                r#type: "launcher",
+                items: [(
+                    | str
+                    | {
+                        name: str,
+                        comment: str,
+                        command: str,
+                        icon: str,
+                        startup_notification: bool,
+                        run_in_terminal: bool,
+                    }
+                )],
+                show_tooltips: bool,
+                label_instead_of_icon: bool,
+                show_last_used_item: bool,
+                arrow_position: (
+                    | "default"
+                    | "north"
+                    | "west"
+                    | "east"
+                    | "south"
+                    | "inside-button"
+                ),
+            }
+            | {
                 r#type: "whiskermenu",
                 appearence: {
                     panel_button: {
@@ -103,31 +128,6 @@ config_types_proc_macro::config_types! {
                     command: str,
                     is_regex: bool,
                 }],
-            }
-            | {
-                r#type: "launcher",
-                items: [(
-                    | str
-                    | {
-                        name: str,
-                        comment: str,
-                        command: str,
-                        icon: str,
-                        startup_notification: bool,
-                        run_in_terminal: bool,
-                    }
-                )],
-                show_tooltips: bool,
-                label_instead_of_icon: bool,
-                show_last_used_item: bool,
-                arrow_position: (
-                    | "default"
-                    | "north"
-                    | "west"
-                    | "east"
-                    | "south"
-                    | "inside-button"
-                ),
             }
         )],
     }],

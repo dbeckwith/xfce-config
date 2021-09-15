@@ -79,9 +79,9 @@ impl<'a> Value<'a> {
         }
     }
 
-    pub fn string(s: Cow<'a, str>) -> Self {
+    pub fn string(s: impl Into<Cow<'a, str>>) -> Self {
         Self {
-            value: TypedValue::String(s),
+            value: TypedValue::String(s.into()),
             props: Vec::new(),
         }
     }

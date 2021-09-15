@@ -7,7 +7,12 @@ pub mod config;
 use self::{channel::*, config::*};
 use std::path::PathBuf;
 
-pub struct ConfigFile {
+pub enum ConfigFile {
+    Link(PathBuf),
+    File(ConfigFileFile),
+}
+
+pub struct ConfigFileFile {
     pub path: PathBuf,
     pub contents: Cfg,
 }
@@ -113,5 +118,86 @@ fn plugin_props(
     plugin_id: i32,
     plugin: ConfigPanelItem,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
-    todo!()
+    match plugin {
+        ConfigPanelItem::Launcher(ConfigPanelItemLauncher {
+            items,
+            show_tooltips,
+            label_instead_of_icon,
+            show_last_used_item,
+            arrow_position,
+        }) => {
+            // TODO: better item_ids scheme
+            // needs to be globally incrementing
+            // also start with time_secs * 10
+            let item_ids = 1..;
+            (
+                vec![
+                    Property::new(
+                        "items",
+                        Value::array(
+                            item_ids
+                                .clone()
+                                .map(|item_id| {
+                                    Value::string(format!(
+                                        "{}.desktop",
+                                        item_id
+                                    ))
+                                })
+                                .collect(),
+                        ),
+                    ),
+                    Property::new(
+                        "disable-tooltips",
+                        Value::bool(!show_tooltips),
+                    ),
+                    Property::new(
+                        "show-label",
+                        Value::bool(label_instead_of_icon),
+                    ),
+                    Property::new(
+                        "move-first",
+                        Value::bool(show_last_used_item),
+                    ),
+                    Property::new(
+                        "arrow-position",
+                        Value::uint(match arrow_position {
+                            ConfigPanelItemLauncherArrowPosition::Default => 0,
+                            ConfigPanelItemLauncherArrowPosition::North => 1,
+                            ConfigPanelItemLauncherArrowPosition::West => 2,
+                            ConfigPanelItemLauncherArrowPosition::East => 3,
+                            ConfigPanelItemLauncherArrowPosition::South => 4,
+                            ConfigPanelItemLauncherArrowPosition::InsideButton => 5,
+                        }),
+                    ),
+                ],
+                item_ids
+                    .zip(items)
+                    .map(|(item_id, item)| match item {
+                        ConfigPanelItemLauncherItem::Str(s) => {
+                            ConfigFile::Link(PathBuf::from(s))
+                        },
+                        ConfigPanelItemLauncherItem::Struct(
+                            ConfigPanelItemLauncherItemStruct {
+                                name,
+                                comment,
+                                command,
+                                icon,
+                                startup_notification,
+                                run_in_terminal,
+                            },
+                        ) => ConfigFile::File(ConfigFileFile {
+                            path: PathBuf::from(format!(
+                                "launcher-{}/{}.desktop",
+                                plugin_id, item_id
+                            )),
+                            contents: Cfg {
+                                // TODO: launcher cfg file
+                            },
+                        }),
+                    })
+                    .collect(),
+            )
+        },
+        ConfigPanelItem::Whiskermenu(_) => todo!(),
+    }
 }
