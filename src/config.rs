@@ -88,6 +88,28 @@ config_types_proc_macro::config_types! {
                 // TODO: support custom menu file
             }
             | {
+                r#type: "clock";
+                time_settings: {
+                    timezone: str;
+                };
+                appearance: {
+                    layout: (
+                        | "analog"
+                        | "binary"
+                        | "digital"
+                        | "fuzzy"
+                        | "lcd"
+                    );
+                    tooltip_format: str;
+                };
+                clock_options: {
+                    show_seconds: bool;
+                    show_military: bool;
+                    flash_time_separators: bool;
+                    show_am_pm: bool;
+                };
+            }
+            | {
                 r#type: "whisker-menu";
                 appearance: {
                     panel_button: {

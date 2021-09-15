@@ -163,6 +163,7 @@ fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
         ConfigPanelItem::Separator(_) => "separator",
         ConfigPanelItem::ActionButtons(_) => "actions",
         ConfigPanelItem::ApplicationsMenu(_) => "applicationsmenu",
+        ConfigPanelItem::Clock(_) => "clock",
         ConfigPanelItem::WhiskerMenu(_) => "whiskermenu",
     }
 }
@@ -184,6 +185,7 @@ fn plugin_props(
         ConfigPanelItem::ApplicationsMenu(applications_menu) => {
             plugin_applications_menu_props(plugin_id, applications_menu)
         },
+        ConfigPanelItem::Clock(clock) => plugin_clock_props(plugin_id, clock),
         ConfigPanelItem::WhiskerMenu(_) => todo!(),
     }
 }
@@ -375,6 +377,45 @@ fn plugin_applications_menu_props(
                     Value::string(button_icon.clone())
                 )
             ),
+        ],
+        Vec::new(),
+    )
+}
+
+fn plugin_clock_props(
+    _plugin_id: i32,
+    clock: &ConfigPanelItemClock,
+) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+    (
+        opt_vec![
+            get_opt!(&clock.time_settings.timezone).map(|timezone| {
+                Property::new("timezone", Value::string(timezone.clone()))
+            }),
+            get_opt!(&clock.appearance.layout).map(|layout| Property::new(
+                "mode",
+                Value::uint(layout.discrim())
+            )),
+            get_opt!(&clock.appearance.tooltip_format).map(|tooltip_format| {
+                Property::new(
+                    "tooltip-format",
+                    Value::string(tooltip_format.clone()),
+                )
+            }),
+            get_opt!(&clock.clock_options.show_seconds).map(|show_seconds| {
+                Property::new("show-seconds", Value::bool(*show_seconds))
+            }),
+            get_opt!(&clock.clock_options.show_military).map(|show_military| {
+                Property::new("show-military", Value::bool(*show_military))
+            }),
+            get_opt!(&clock.clock_options.flash_time_separators).map(
+                |flash_time_separators| Property::new(
+                    "flash-separators",
+                    Value::bool(*flash_time_separators)
+                )
+            ),
+            get_opt!(&clock.clock_options.show_am_pm).map(|show_am_pm| {
+                Property::new("show-meridiem", Value::bool(*show_am_pm))
+            }),
         ],
         Vec::new(),
     )
