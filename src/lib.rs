@@ -142,6 +142,10 @@ fn panel_props(
                 }),
             )
         }),
+        get_opt!(&panel.display.general.locked).map(|locked| Property::new(
+            "position-locked",
+            Value::bool(!*locked)
+        )),
         get_opt!(&panel.display.general.auto_hide).map(|auto_hide| {
             Property::new(
                 "autohide-behavior",
@@ -152,6 +156,12 @@ fn panel_props(
                 }),
             )
         }),
+        get_opt!(&panel.display.general.reserve_border_space).map(
+            |reserve_border_space| Property::new(
+                "disable-struts",
+                Value::bool(!*reserve_border_space)
+            )
+        ),
         get_opt!(&panel.display.measurements.row_size)
             .map(|row_size| Property::new("size", Value::uint(*row_size))),
         get_opt!(&panel.display.measurements.row_count).map(|row_count| {
@@ -240,6 +250,7 @@ fn plugin_launcher_props(
             .zip(launcher.items.into_iter().flatten())
             .map(|(item_id, item)| match item {
                 ConfigPanelItemLauncherItem::Str(s) => {
+                    // TODO: support URL items
                     ConfigFile::Link(PathBuf::from(s))
                 },
                 ConfigPanelItemLauncherItem::Struct(item) => {

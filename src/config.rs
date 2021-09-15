@@ -1,6 +1,7 @@
 config_types_proc_macro::config_types! {
     panels: [{
         display: {
+            // TODO: panel position
             general: {
                 mode: ("horizontal" | "vertical" | "deskbar"),
                 locked: bool,
@@ -12,7 +13,7 @@ config_types_proc_macro::config_types! {
                 row_count: uint,
                 length: uint,
                 auto_size: bool,
-            }
+            },
         },
         appearence: {
             // TODO: panel appearence
