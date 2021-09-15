@@ -76,7 +76,7 @@ config_types_proc_macro::config_types! {
                 };
             }
             | {
-                r#type: "whiskermenu";
+                r#type: "whisker-menu";
                 appearance: {
                     panel_button: {
                         display: ("icon" | "title" | "icon-and-title");

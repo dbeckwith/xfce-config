@@ -97,7 +97,7 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
                         Property::new(
                             format!("plugin-{}", plugin_id),
                             Value::new(
-                                TypedValue::String(plugin.r#type().into()),
+                                TypedValue::String(plugin_type(plugin).into()),
                                 {
                                     let (props, plugin_config_files) =
                                         plugin_props(plugin_id, plugin);
@@ -157,6 +157,15 @@ fn panel_props(
     ])
 }
 
+fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
+    match plugin {
+        ConfigPanelItem::Launcher(_) => "launcher",
+        ConfigPanelItem::Separator(_) => "separator",
+        ConfigPanelItem::ActionButtons(_) => "actions",
+        ConfigPanelItem::WhiskerMenu(_) => "whiskermenu",
+    }
+}
+
 fn plugin_props(
     plugin_id: i32,
     plugin: &ConfigPanelItem,
@@ -171,7 +180,7 @@ fn plugin_props(
         ConfigPanelItem::ActionButtons(action_buttons) => {
             plugin_action_buttons_props(plugin_id, action_buttons)
         },
-        ConfigPanelItem::Whiskermenu(_) => todo!(),
+        ConfigPanelItem::WhiskerMenu(_) => todo!(),
     }
 }
 
