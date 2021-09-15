@@ -15,8 +15,8 @@ config_types_proc_macro::config_types! {
                 auto_size: bool,
             },
         },
-        appearence: {
-            // TODO: panel appearence
+        appearance: {
+            // TODO: panel appearance
         },
         items: [(
             | {
@@ -50,8 +50,34 @@ config_types_proc_macro::config_types! {
                 expand: bool,
             }
             | {
+                r#type: "action-buttons",
+                general: {
+                    appearance: ("action-buttons" | "session-menu"),
+                    title: ("full-name" | "username" | "user-id" | "custom"),
+                    custom_title: str,
+                },
+                actions: {
+                    items: {
+                        // TODO: different schema to allow reordering
+                        lock_screen: bool,
+                        switch_user: bool,
+                        separator1: bool,
+                        suspend: bool,
+                        hibernate: bool,
+                        hybrid_sleep: bool,
+                        separator2: bool,
+                        shutdown: bool,
+                        restart: bool,
+                        separator3: bool,
+                        logout: bool,
+                        logout_dialog: bool,
+                    },
+                    show_confirmation_dialog: bool,
+                },
+            }
+            | {
                 r#type: "whiskermenu",
-                appearence: {
+                appearance: {
                     panel_button: {
                         display: ("icon" | "title" | "icon-and-title"),
                         title: str,

@@ -19,17 +19,17 @@ pub struct ConfigFileFile {
 
 pub struct Cfg {}
 
-macro_rules! opt_props {
-    ($($prop:expr),*$(,)?) => {{
-        let mut vec = Vec::with_capacity(opt_props!(@count $($prop:expr;)*));
-        $(if let Some(prop) = $prop {
-            vec.push(prop);
+macro_rules! opt_vec {
+    ($($item:expr),*$(,)?) => {{
+        let mut vec = Vec::with_capacity(opt_vec!(@count $($item:expr;)*));
+        $(if let Some(item) = $item {
+            vec.push(item);
         })*
         vec.shrink_to_fit();
         vec
     }};
-    (@count $head:expr; $($prop:expr;)*) => {
-        1 + opt_props!(@count $($prop;)*)
+    (@count $head:expr; $($item:expr;)*) => {
+        1 + opt_vec!(@count $($item;)*)
     };
     (@count) => {
         0
@@ -76,7 +76,7 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
     let channel = Channel::new(
         "xfce4-panel",
         "1.0",
-        opt_props![
+        opt_vec![
             Some(Property::new("configver", Value::int(2))),
             get_opt!(&config.panels).map(|panels| {
                 Property::new(
@@ -131,30 +131,15 @@ fn panel_props(
     panel: &ConfigPanel,
     plugin_ids: impl Iterator<Item = i32>,
 ) -> Value<'static> {
-    Value::empty(opt_props![
-        get_opt!(&panel.display.general.mode).map(|mode| {
-            Property::new(
-                "mode",
-                Value::uint(match mode {
-                    ConfigPanelDisplayGeneralMode::Horizontal => 0,
-                    ConfigPanelDisplayGeneralMode::Vertical => 1,
-                    ConfigPanelDisplayGeneralMode::Deskbar => 2,
-                }),
-            )
-        }),
+    Value::empty(opt_vec![
+        get_opt!(&panel.display.general.mode)
+            .map(|mode| { Property::new("mode", Value::uint(mode.discrim())) }),
         get_opt!(&panel.display.general.locked).map(|locked| Property::new(
             "position-locked",
             Value::bool(!*locked)
         )),
         get_opt!(&panel.display.general.auto_hide).map(|auto_hide| {
-            Property::new(
-                "autohide-behavior",
-                Value::uint(match auto_hide {
-                    ConfigPanelDisplayGeneralAutoHide::Never => 0,
-                    ConfigPanelDisplayGeneralAutoHide::Auto => 1,
-                    ConfigPanelDisplayGeneralAutoHide::Always => 2,
-                }),
-            )
+            Property::new("autohide-behavior", Value::uint(auto_hide.discrim()))
         }),
         get_opt!(&panel.display.general.reserve_border_space).map(
             |reserve_border_space| Property::new(
@@ -194,6 +179,9 @@ fn plugin_props(
         ConfigPanelItem::Separator(separator) => {
             plugin_separator_props(plugin_id, separator)
         },
+        ConfigPanelItem::ActionButtons(action_buttons) => {
+            plugin_action_buttons_props(plugin_id, action_buttons)
+        },
         ConfigPanelItem::Whiskermenu(_) => todo!(),
     }
 }
@@ -207,7 +195,7 @@ fn plugin_launcher_props(
     // also start with time_secs * 10
     let item_ids = 1..;
     (
-        opt_props![
+        opt_vec![
             get_opt!(&launcher.items).map(|items| Property::new(
                 "items",
                 Value::array(
@@ -223,13 +211,13 @@ fn plugin_launcher_props(
             get_opt!(launcher.show_tooltips).map(
                 |show_tooltips| Property::new(
                     "disable-tooltips",
-                    Value::bool(!show_tooltips)
+                    Value::bool(!show_tooltips),
                 )
             ),
             get_opt!(launcher.label_instead_of_icon).map(
                 |label_instead_of_icon| Property::new(
                     "show-label",
-                    Value::bool(label_instead_of_icon)
+                    Value::bool(label_instead_of_icon),
                 )
             ),
             get_opt!(launcher.show_last_used_item).map(|show_last_used_item| {
@@ -238,14 +226,7 @@ fn plugin_launcher_props(
             get_opt!(launcher.arrow_position).map(|arrow_position| {
                 Property::new(
                     "arrow-position",
-                    Value::uint(match arrow_position {
-                        ConfigPanelItemLauncherArrowPosition::Default => 0,
-                        ConfigPanelItemLauncherArrowPosition::North => 1,
-                        ConfigPanelItemLauncherArrowPosition::West => 2,
-                        ConfigPanelItemLauncherArrowPosition::East => 3,
-                        ConfigPanelItemLauncherArrowPosition::South => 4,
-                        ConfigPanelItemLauncherArrowPosition::InsideButton => 5,
-                    }),
+                    Value::uint(arrow_position.discrim()),
                 )
             }),
         ],
@@ -277,18 +258,72 @@ fn plugin_separator_props(
     separator: ConfigPanelItemSeparator,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
     (
-        opt_props![
+        opt_vec![
             get_opt!(separator.style).map(|style| Property::new(
                 "style",
-                Value::uint(match style {
-                    ConfigPanelItemSeparatorStyle::Transparent => 0,
-                    ConfigPanelItemSeparatorStyle::Separator => 1,
-                    ConfigPanelItemSeparatorStyle::Handle => 2,
-                    ConfigPanelItemSeparatorStyle::Dots => 3,
-                })
+                Value::uint(style.discrim()),
             )),
             get_opt!(separator.expand)
                 .map(|expand| Property::new("expand", Value::bool(expand))),
+        ],
+        Vec::new(),
+    )
+}
+
+fn plugin_action_buttons_props(
+    _plugin_id: i32,
+    action_buttons: ConfigPanelItemActionButtons,
+) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+    (
+        opt_vec![
+            get_opt!(action_buttons.general.appearance).map(|appearance| {
+                Property::new("appearance", Value::uint(appearance.discrim()))
+            }),
+            get_opt!(action_buttons.general.title).map(|title| Property::new(
+                "title",
+                Value::uint(title.discrim()),
+            )),
+            get_opt!(action_buttons.general.custom_title).map(|custom_title| {
+                Property::new("custom-title", Value::string(custom_title))
+            }),
+            get_opt!(action_buttons.actions.items).map(|items| {
+                macro_rules! item {
+                    ($prop:ident, $name:literal) => {
+                        get_opt!(items.$prop).map(|$prop| {
+                            Value::string(format!(
+                                "{}{}",
+                                if $prop { "+" } else { "-" },
+                                $name
+                            ))
+                        })
+                    };
+                }
+                Property::new(
+                    "items",
+                    Value::array(opt_vec![
+                        item!(lock_screen, "lock-screen"),
+                        item!(switch_user, "switch-user"),
+                        item!(separator1, "separator"),
+                        item!(suspend, "suspend"),
+                        item!(hibernate, "hibernate"),
+                        item!(hybrid_sleep, "hybrid-sleep"),
+                        item!(separator2, "separator"),
+                        item!(shutdown, "shutdown"),
+                        item!(restart, "restart"),
+                        item!(separator3, "separator"),
+                        item!(logout, "logout"),
+                        item!(logout_dialog, "logout-dialog"),
+                    ]),
+                )
+            }),
+            get_opt!(action_buttons.actions.show_confirmation_dialog).map(
+                |show_confirmation_dialog| {
+                    Property::new(
+                        "ask-confirmation",
+                        Value::bool(show_confirmation_dialog),
+                    )
+                }
+            ),
         ],
         Vec::new(),
     )
