@@ -282,35 +282,30 @@ fn plugin_action_buttons_props(
                     )
                 }
             ),
-            get_opt!(&action_buttons.actions.items).map(|items| {
-                macro_rules! item {
-                    ($prop:ident, $name:literal) => {
-                        get_opt!(&items.$prop).map(|$prop| {
-                            Value::string(format!(
-                                "{}{}",
-                                if *$prop { "+" } else { "-" },
-                                $name
-                            ))
-                        })
-                    };
-                }
-                Property::new(
-                    "items",
-                    Value::array(opt_vec![
-                        item!(lock_screen, "lock-screen"),
-                        item!(switch_user, "switch-user"),
-                        item!(separator1, "separator"),
-                        item!(suspend, "suspend"),
-                        item!(hibernate, "hibernate"),
-                        item!(hybrid_sleep, "hybrid-sleep"),
-                        item!(separator2, "separator"),
-                        item!(shutdown, "shutdown"),
-                        item!(restart, "restart"),
-                        item!(separator3, "separator"),
-                        item!(logout, "logout"),
-                        item!(logout_dialog, "logout-dialog"),
-                    ]),
-                )
+            get_opt!(&action_buttons.actions.items).and_then(|items| {
+                (!items.is_empty()).then(|| {
+                    Property::new(
+                        "items",
+                        Value::array(
+                            items
+                                .iter()
+                                .filter_map(|item| {
+                                    let enabled = item.enabled;
+                                    let r#type = item.r#type.as_ref()?;
+                                    Some(Value::string(format!(
+                                        "{}{}",
+                                        if enabled.unwrap_or(true) {
+                                            "+"
+                                        } else {
+                                            "-"
+                                        },
+                                        r#type.name()
+                                    )))
+                                })
+                                .collect(),
+                        ),
+                    )
+                })
             }),
             get_opt!(&action_buttons.actions.show_confirmation_dialog).map(
                 |show_confirmation_dialog| {

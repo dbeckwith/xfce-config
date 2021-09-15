@@ -57,21 +57,21 @@ config_types_proc_macro::config_types! {
                     custom_title: str,
                 },
                 actions: {
-                    items: {
-                        // TODO: different schema to allow reordering
-                        lock_screen: bool,
-                        switch_user: bool,
-                        separator1: bool,
-                        suspend: bool,
-                        hibernate: bool,
-                        hybrid_sleep: bool,
-                        separator2: bool,
-                        shutdown: bool,
-                        restart: bool,
-                        separator3: bool,
-                        logout: bool,
-                        logout_dialog: bool,
-                    },
+                    items: [{
+                        r#type: (
+                            | "separator"
+                            | "lock-screen"
+                            | "switch-user"
+                            | "suspend"
+                            | "hibernate"
+                            | "hybrid-sleep"
+                            | "shutdown"
+                            | "restart"
+                            | "logout"
+                            | "logout-dialog"
+                        ),
+                        enabled: bool,
+                    }],
                     show_confirmation_dialog: bool,
                 },
             }

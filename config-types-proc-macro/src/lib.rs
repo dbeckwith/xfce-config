@@ -437,11 +437,11 @@ impl EmitTypeDecls for TypeEnum {
             variants,
         } = self;
         let mut decl_variants = Vec::<syn::Variant>::new();
-        let mut discrim_fn = None::<ItemFn>;
+        let mut discrim_fns = Vec::<ItemFn>::new();
         if variants.iter().all(|ty| matches!(ty, Type::LitStr(_))) {
-            discrim_fn = Some(emit_enum_lit_str(variants, &mut decl_variants)?);
+            discrim_fns.extend(emit_enum_lit_str(variants, &mut decl_variants)?);
         } else if variants.iter().all(|ty| matches!(ty, Type::Struct(_))) {
-            discrim_fn = Some(emit_enum_struct(
+            discrim_fns.extend(emit_enum_struct(
                 variants,
                 &mut decl_variants,
                 path.clone(),
@@ -467,10 +467,10 @@ impl EmitTypeDecls for TypeEnum {
             }
         };
         type_decls.push(type_decl);
-        if let Some(discrim_fn) = discrim_fn {
+        if !discrim_fns.is_empty() {
             let discrim_impl = parse_quote! {
                 impl #name {
-                    #discrim_fn
+                    #(#discrim_fns)*
                 }
             };
             type_decls.push(discrim_impl);
@@ -482,35 +482,52 @@ impl EmitTypeDecls for TypeEnum {
 fn emit_enum_lit_str(
     variants: impl IntoIterator<Item = Type>,
     decl_variants: &mut Vec<syn::Variant>,
-) -> Result<ItemFn> {
-    let mut variant_names = Vec::new();
+) -> Result<Vec<ItemFn>> {
+    let mut discrim_values = Vec::new();
     for ty in variants {
         let TypeLitStr { lit_str } = match ty {
             Type::LitStr(type_lit_str) => type_lit_str,
             _ => unreachable!(),
         };
         let variant_name = lit_str_to_ident(&lit_str);
-        variant_names.push(variant_name.clone());
+        discrim_values.push((variant_name.clone(), lit_str));
         let variant = parse_quote! {
             #variant_name
         };
         decl_variants.push(variant);
     }
-    let match_arms = variant_names.into_iter().enumerate().map(
-        |(variant_idx, variant_name)| -> Arm {
+    let name_match_arms =
+        discrim_values
+            .iter()
+            .map(|(variant_name, variant_lit_str)| -> Arm {
+                parse_quote! {
+                    Self::#variant_name => #variant_lit_str
+                }
+            });
+    let discrim_match_arms = discrim_values.iter().enumerate().map(
+        |(variant_idx, (variant_name, _variant_lit_str))| -> Arm {
             let variant_idx = variant_idx as u32;
             parse_quote! {
                 Self::#variant_name => #variant_idx
             }
         },
     );
-    Ok(parse_quote! {
-        pub fn discrim(&self) -> u32 {
-            match self {
-                #(#match_arms,)*
+    Ok(vec![
+        parse_quote! {
+            pub fn name(&self) -> &'static str {
+                match self {
+                    #(#name_match_arms,)*
+                }
             }
-        }
-    })
+        },
+        parse_quote! {
+            pub fn discrim(&self) -> u32 {
+                match self {
+                    #(#discrim_match_arms,)*
+                }
+            }
+        },
+    ])
 }
 
 fn emit_enum_struct(
@@ -518,7 +535,7 @@ fn emit_enum_struct(
     decl_variants: &mut Vec<syn::Variant>,
     path: Path,
     type_decls: &mut Vec<Item>,
-) -> Result<ItemFn> {
+) -> Result<Vec<ItemFn>> {
     let mut discrim_field_name = None::<Ident>;
     let mut discrim_values = Vec::new();
     for ty in variants {
@@ -593,13 +610,13 @@ fn emit_enum_struct(
             }
         },
     );
-    Ok(parse_quote! {
+    Ok(vec![parse_quote! {
         pub fn #discrim_field_name(&self) -> &'static str {
             match self {
                 #(#match_arms,)*
             }
         }
-    })
+    }])
 }
 
 fn emit_enum_unique(
