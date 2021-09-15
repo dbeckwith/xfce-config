@@ -12,9 +12,11 @@ use syn::{
     parse_quote,
     punctuated::Punctuated,
     token::{Brace, Bracket, Paren},
+    Arm,
     Error,
     Ident,
     Item,
+    ItemFn,
     LitStr,
     Result,
     Token,
@@ -435,106 +437,26 @@ impl EmitTypeDecls for TypeEnum {
             variants,
         } = self;
         let mut decl_variants = Vec::<syn::Variant>::new();
+        let mut discrim_fn = None::<ItemFn>;
         if variants.iter().all(|ty| matches!(ty, Type::LitStr(_))) {
-            for ty in variants {
-                let TypeLitStr { lit_str } = match ty {
-                    Type::LitStr(type_lit_str) => type_lit_str,
-                    _ => unreachable!(),
-                };
-                let variant_name = lit_str_to_ident(&lit_str);
-                let variant = parse_quote! {
-                    #variant_name
-                };
-                decl_variants.push(variant);
-            }
+            emit_enum_lit_str(variants, &mut decl_variants)?;
         } else if variants.iter().all(|ty| matches!(ty, Type::Struct(_))) {
-            for ty in variants {
-                let TypeStruct {
-                    brace_token,
-                    fields,
-                } = match ty {
-                    Type::Struct(type_struct) => type_struct,
-                    _ => unreachable!(),
-                };
-                let mut fields = fields.into_iter();
-                let discrim_field = fields.next().ok_or_else(|| {
-                    Error::new(
-                        brace_token.span,
-                        "at least one field is required",
-                    )
-                })?;
-                let variant_name = {
-                    let Field {
-                        name,
-                        colon_token: _,
-                        ty,
-                    } = discrim_field;
-                    match &ty {
-                        Type::LitStr(TypeLitStr { lit_str }) => {
-                            lit_str_to_ident(lit_str)
-                        },
-                        _ => {
-                            return Err(Error::new_spanned(
-                                name,
-                                "first field must be a literal string",
-                            ))
-                        },
-                    }
-                };
-                let path = path.clone().push(variant_name.clone());
-                TypeStruct {
-                    brace_token,
-                    fields: fields.collect(),
-                }
-                .emit_type_decls(path.clone(), type_decls)?;
-                let variant_ty: syn::Type = {
-                    let ty_name = path.join();
-                    parse_quote!(#ty_name)
-                };
-                let variant = parse_quote! {
-                    #variant_name(#variant_ty)
-                };
-                decl_variants.push(variant);
-            }
-        } else if variants
-            .iter()
-            .all(|ty| !matches!(ty, Type::LitStr(_) | Type::Array(_) | Type::Enum(_)))
-            && is_unique_types(variants.iter())
+            discrim_fn = Some(emit_enum_struct(
+                variants,
+                &mut decl_variants,
+                path.clone(),
+                type_decls,
+            )?);
+        } else if variants.iter().all(|ty| {
+            !matches!(ty, Type::LitStr(_) | Type::Array(_) | Type::Enum(_))
+        }) && is_unique_types(variants.iter())
         {
-            for ty in variants {
-                let variant_name = format_ident!(
-                    "{}",
-                    match ty {
-                        Type::Bool(_) => "Bool",
-                        Type::Int(_) => "Int",
-                        Type::Uint(_) => "Uint",
-                        Type::Str(_) => "Str",
-                        Type::LitStr(_) => unreachable!(),
-                        Type::Array(_) => unreachable!(),
-                        Type::Struct(_) => "Struct",
-                        Type::Enum(_) => unreachable!(),
-                    }
-                );
-                let path = path.clone().push(variant_name.clone());
-                let variant_ty: syn::Type = match ty {
-                    Type::Bool(_) => parse_quote!(bool),
-                    Type::Int(_) => parse_quote!(i32),
-                    Type::Uint(_) => parse_quote!(u32),
-                    Type::Str(_) => parse_quote!(::std::string::String),
-                    Type::LitStr(_) => unreachable!(),
-                    Type::Array(_) => unreachable!(),
-                    Type::Struct(_) => {
-                        let ty_name = path.clone().join();
-                        parse_quote!(#ty_name)
-                    },
-                    Type::Enum(_) => unreachable!(),
-                };
-                ty.emit_type_decls(path, type_decls)?;
-                let variant = parse_quote! {
-                    #variant_name(#variant_ty)
-                };
-                decl_variants.push(variant);
-            }
+            emit_enum_unique(
+                variants,
+                &mut decl_variants,
+                path.clone(),
+                type_decls,
+            )?;
         } else {
             return Err(Error::new(paren_token.span, "bad enum type"));
         }
@@ -545,8 +467,158 @@ impl EmitTypeDecls for TypeEnum {
             }
         };
         type_decls.push(type_decl);
+        if let Some(discrim_fn) = discrim_fn {
+            let discrim_impl = parse_quote! {
+                impl #name {
+                    #discrim_fn
+                }
+            };
+            type_decls.push(discrim_impl);
+        }
         Ok(())
     }
+}
+
+fn emit_enum_lit_str(
+    variants: impl IntoIterator<Item = Type>,
+    decl_variants: &mut Vec<syn::Variant>,
+) -> Result<()> {
+    for ty in variants {
+        let TypeLitStr { lit_str } = match ty {
+            Type::LitStr(type_lit_str) => type_lit_str,
+            _ => unreachable!(),
+        };
+        let variant_name = lit_str_to_ident(&lit_str);
+        let variant = parse_quote! {
+            #variant_name
+        };
+        decl_variants.push(variant);
+    }
+    Ok(())
+}
+
+fn emit_enum_struct(
+    variants: impl IntoIterator<Item = Type>,
+    decl_variants: &mut Vec<syn::Variant>,
+    path: Path,
+    type_decls: &mut Vec<Item>,
+) -> Result<ItemFn> {
+    let mut discrim_field_name = None::<Ident>;
+    let mut discrim_values = Vec::new();
+    for ty in variants {
+        let TypeStruct {
+            brace_token,
+            fields,
+        } = match ty {
+            Type::Struct(type_struct) => type_struct,
+            _ => unreachable!(),
+        };
+        let mut fields = fields.into_iter();
+        let discrim_field = fields.next().ok_or_else(|| {
+            Error::new(brace_token.span, "at least one field is required")
+        })?;
+        if let Some(discrim_field_name) = discrim_field_name.as_ref() {
+            if &discrim_field.name != discrim_field_name {
+                return Err(Error::new_spanned(
+                    discrim_field.name,
+                    "first field must have the same name for all variants",
+                ));
+            }
+        } else {
+            discrim_field_name = Some(discrim_field.name.clone());
+        }
+        let variant_name_lit_str = {
+            let Field {
+                name,
+                colon_token: _,
+                ty,
+            } = &discrim_field;
+            match &ty {
+                Type::LitStr(TypeLitStr { lit_str }) => lit_str,
+                _ => {
+                    return Err(Error::new_spanned(
+                        name,
+                        "first field must be a literal string",
+                    ))
+                },
+            }
+        };
+        let variant_name = lit_str_to_ident(variant_name_lit_str);
+        discrim_values
+            .push((variant_name.clone(), variant_name_lit_str.clone()));
+        let path = path.clone().push(variant_name.clone());
+        TypeStruct {
+            brace_token,
+            fields: fields.collect(),
+        }
+        .emit_type_decls(path.clone(), type_decls)?;
+        let variant_ty: syn::Type = {
+            let ty_name = path.join();
+            parse_quote!(#ty_name)
+        };
+        let variant = parse_quote! {
+            #variant_name(#variant_ty)
+        };
+        decl_variants.push(variant);
+    }
+    let discrim_field_name = discrim_field_name.unwrap();
+    let match_arms = discrim_values.into_iter().map(
+        |(variant_name, variant_name_lit_str)| -> Arm {
+            parse_quote! {
+                Self::#variant_name(_) => #variant_name_lit_str
+            }
+        },
+    );
+    Ok(parse_quote! {
+        pub fn #discrim_field_name(&self) -> &'static str {
+            match self {
+                #(#match_arms,)*
+            }
+        }
+    })
+}
+
+fn emit_enum_unique(
+    variants: impl IntoIterator<Item = Type>,
+    decl_variants: &mut Vec<syn::Variant>,
+    path: Path,
+    type_decls: &mut Vec<Item>,
+) -> Result<()> {
+    for ty in variants {
+        let variant_name = format_ident!(
+            "{}",
+            match ty {
+                Type::Bool(_) => "Bool",
+                Type::Int(_) => "Int",
+                Type::Uint(_) => "Uint",
+                Type::Str(_) => "Str",
+                Type::LitStr(_) => unreachable!(),
+                Type::Array(_) => unreachable!(),
+                Type::Struct(_) => "Struct",
+                Type::Enum(_) => unreachable!(),
+            }
+        );
+        let path = path.clone().push(variant_name.clone());
+        let variant_ty: syn::Type = match ty {
+            Type::Bool(_) => parse_quote!(bool),
+            Type::Int(_) => parse_quote!(i32),
+            Type::Uint(_) => parse_quote!(u32),
+            Type::Str(_) => parse_quote!(::std::string::String),
+            Type::LitStr(_) => unreachable!(),
+            Type::Array(_) => unreachable!(),
+            Type::Struct(_) => {
+                let ty_name = path.clone().join();
+                parse_quote!(#ty_name)
+            },
+            Type::Enum(_) => unreachable!(),
+        };
+        ty.emit_type_decls(path, type_decls)?;
+        let variant = parse_quote! {
+            #variant_name(#variant_ty)
+        };
+        decl_variants.push(variant);
+    }
+    Ok(())
 }
 
 fn is_unique_types<'a>(types: impl Iterator<Item = &'a Type>) -> bool {

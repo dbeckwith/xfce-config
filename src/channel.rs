@@ -1,36 +1,107 @@
 use anyhow::Result;
-use std::io::Write;
+use std::{borrow::Cow, io::Write};
 
 #[derive(Debug)]
-pub struct Channel {
-    pub name: String,
-    pub version: String,
-    pub props: Vec<Property>,
+pub struct Channel<'a> {
+    pub name: Cow<'a, str>,
+    pub version: Cow<'a, str>,
+    pub props: Vec<Property<'a>>,
 }
 
 #[derive(Debug)]
-pub struct Property {
-    pub name: String,
-    pub value: Value,
+pub struct Property<'a> {
+    pub name: Cow<'a, str>,
+    pub value: Value<'a>,
 }
 
 #[derive(Debug)]
-pub struct Value {
-    pub value: TypedValue,
-    pub props: Vec<Property>,
+pub struct Value<'a> {
+    pub value: TypedValue<'a>,
+    pub props: Vec<Property<'a>>,
 }
 
 #[derive(Debug)]
-pub enum TypedValue {
+pub enum TypedValue<'a> {
     Bool(bool),
     Int(i32),
     Uint(u32),
-    String(String),
-    Array(Vec<Value>),
+    String(Cow<'a, str>),
+    Array(Vec<Value<'a>>),
     Empty,
 }
 
-impl Channel {
+impl<'a> Channel<'a> {
+    pub fn new(
+        name: impl Into<Cow<'a, str>>,
+        version: impl Into<Cow<'a, str>>,
+        props: Vec<Property<'a>>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            version: version.into(),
+            props,
+        }
+    }
+}
+
+impl<'a> Property<'a> {
+    pub fn new(name: impl Into<Cow<'a, str>>, value: Value<'a>) -> Self {
+        Self {
+            name: name.into(),
+            value,
+        }
+    }
+}
+
+impl<'a> Value<'a> {
+    pub fn new(value: TypedValue<'a>, props: Vec<Property<'a>>) -> Self {
+        Self { value, props }
+    }
+
+    pub fn bool(b: bool) -> Self {
+        Self {
+            value: TypedValue::Bool(b),
+            props: Vec::new(),
+        }
+    }
+
+    pub fn int(n: i32) -> Self {
+        Self {
+            value: TypedValue::Int(n),
+            props: Vec::new(),
+        }
+    }
+
+    pub fn uint(n: u32) -> Self {
+        Self {
+            value: TypedValue::Uint(n),
+            props: Vec::new(),
+        }
+    }
+
+    pub fn string(s: Cow<'a, str>) -> Self {
+        Self {
+            value: TypedValue::String(s),
+            props: Vec::new(),
+        }
+    }
+
+    pub fn array(items: Vec<Value<'a>>) -> Self {
+        Self {
+            value: TypedValue::Array(items),
+            props: Vec::new(),
+        }
+    }
+
+    pub fn empty(props: Vec<Property<'a>>) -> Self {
+        Self {
+            value: TypedValue::Empty,
+            props,
+        }
+    }
+}
+
+impl Channel<'_> {
     pub fn write_xml<W>(&self, writer: W) -> Result<()>
     where
         W: Write,
@@ -41,7 +112,7 @@ impl Channel {
         };
 
         fn write_value<W>(
-            value: &Value,
+            value: &Value<'_>,
             tag: Option<BytesStart<'static>>,
             writer: &mut Writer<W>,
         ) -> Result<()>
@@ -121,7 +192,7 @@ impl Channel {
         }
 
         fn write_props<W>(
-            props: &[Property],
+            props: &[Property<'_>],
             writer: &mut Writer<W>,
         ) -> Result<()>
         where
@@ -187,11 +258,11 @@ mod tests {
     fn write_xml() {
         let mut buf = Vec::new();
         let channel = Channel {
-            name: "panel".to_owned(),
-            version: "1.0".to_owned(),
+            name: "panel".into(),
+            version: "1.0".into(),
             props: vec![
                 Property {
-                    name: "foo".to_owned(),
+                    name: "foo".into(),
                     value: Value {
                         value: TypedValue::Array(vec![
                             Value {
@@ -207,13 +278,13 @@ mod tests {
                     },
                 },
                 Property {
-                    name: "bar".to_owned(),
+                    name: "bar".into(),
                     value: Value {
                         value: TypedValue::Empty,
                         props: vec![Property {
-                            name: "baz".to_owned(),
+                            name: "baz".into(),
                             value: Value {
-                                value: TypedValue::String("qux".to_owned()),
+                                value: TypedValue::String("qux".into()),
                                 props: vec![],
                             },
                         }],
