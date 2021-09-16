@@ -184,6 +184,7 @@ fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
         ConfigPanelItem::Clock(_) => "clock",
         ConfigPanelItem::CpuGraph(_) => "cpugraph",
         ConfigPanelItem::DirectoryMenu(_) => "directorymenu",
+        ConfigPanelItem::FreeSpaceChecker(_) => "fsguard",
         ConfigPanelItem::WhiskerMenu(_) => "whiskermenu",
     }
 }
@@ -212,6 +213,9 @@ fn plugin_props(
         },
         ConfigPanelItem::DirectoryMenu(directory_menu) => {
             plugin_directory_menu_props(plugin_id, directory_menu)
+        },
+        ConfigPanelItem::FreeSpaceChecker(free_space_checker) => {
+            plugin_free_space_checker_props(plugin_id, free_space_checker)
         },
         ConfigPanelItem::WhiskerMenu(_) => todo!(),
     }
@@ -701,5 +705,64 @@ fn plugin_directory_menu_props(
         ]
         .opt_vec(),
         Vec::new(),
+    )
+}
+
+fn plugin_free_space_checker_props(
+    plugin_id: i32,
+    free_space_checker: &ConfigPanelItemFreeSpaceChecker,
+) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+    fn fmt_bool(b: bool) -> String {
+        if b { "true" } else { "false" }.to_owned()
+    }
+    (
+        Vec::new(),
+        vec![ConfigFile::File(ConfigFileFile {
+            path: PathBuf::from(format!("cpugraph-{}.rc", plugin_id)),
+            contents: Cfg {
+                root_props: [
+                    get_opt!(&free_space_checker.configuration.mount_point)
+                        .map(|mount_point| {
+                            ("mnt".to_owned(), mount_point.clone())
+                        }),
+                    get_opt!(&free_space_checker.configuration.warning_limit)
+                        .map(|warning_limit| {
+                            ("yellow".to_owned(), warning_limit.to_string())
+                        }),
+                    get_opt!(&free_space_checker.configuration.urgent_limit)
+                        .map(|urgent_limit| {
+                            ("red".to_owned(), urgent_limit.to_string())
+                        }),
+                    get_opt!(&free_space_checker.user_interface.name)
+                        .map(|name| ("label".to_owned(), name.clone())),
+                    get_opt!(&free_space_checker.user_interface.show_name).map(
+                        |show_name| {
+                            ("label_visible".to_owned(), fmt_bool(*show_name))
+                        },
+                    ),
+                    get_opt!(&free_space_checker.user_interface.show_size).map(
+                        |show_size| {
+                            (
+                                "lab_size_visible".to_owned(),
+                                fmt_bool(*show_size),
+                            )
+                        },
+                    ),
+                    get_opt!(&free_space_checker.user_interface.show_meter)
+                        .map(|show_meter| {
+                            (
+                                "progress_var_visible".to_owned(),
+                                fmt_bool(*show_meter),
+                            )
+                        }),
+                    get_opt!(&free_space_checker.user_interface.show_button)
+                        .map(|show_button| {
+                            ("hide_button".to_owned(), fmt_bool(!show_button))
+                        }),
+                ]
+                .opt_vec(),
+                sections: Vec::new(),
+            },
+        })],
     )
 }

@@ -171,6 +171,21 @@ config_types_proc_macro::config_types! {
                 };
             }
             | {
+                r#type: "free-space-checker";
+                configuration: {
+                    mount_point: str;
+                    warning_limit: uint;
+                    urgent_limit: uint;
+                };
+                user_interface: {
+                    name: str;
+                    show_name: bool;
+                    show_size: bool;
+                    show_meter: bool;
+                    show_button: bool;
+                };
+            }
+            | {
                 r#type: "whisker-menu";
                 appearance: {
                     panel_button: {
