@@ -76,6 +76,7 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
         [
             Some(Property::new("configver", Value::int(2))),
             get_opt!(&config.panels).map(|panels| {
+                let mut plugin_ids = plugin_ids.clone();
                 Property::new(
                     "panels",
                     Value::new(
@@ -87,7 +88,7 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
                             .map(|(panel_id, panel)| {
                                 Property::new(
                                     format!("panel-{}", panel_id),
-                                    panel_props(panel, plugin_ids.clone()),
+                                    panel_props(panel, &mut plugin_ids),
                                 )
                             })
                             .collect(),
