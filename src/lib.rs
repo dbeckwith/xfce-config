@@ -6,7 +6,7 @@ pub mod channel;
 pub mod config;
 
 use self::{cfg::*, channel::*, config::*};
-use std::path::PathBuf;
+use std::{convert::TryFrom, path::PathBuf, time::SystemTime};
 
 pub enum ConfigFile {
     Link(PathBuf),
@@ -61,6 +61,14 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
     let mut config_files = Vec::new();
     let panel_ids = 0..;
     let plugin_ids = 1..;
+    let mut launcher_item_ids = i32::try_from(
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            * 10,
+    )
+    .unwrap()..;
     let channel = Channel::new(
         "xfce4-panel",
         "1.0",
@@ -99,7 +107,11 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
                                 TypedValue::String(plugin_type(plugin).into()),
                                 {
                                     let (props, plugin_config_files) =
-                                        plugin_props(plugin_id, plugin);
+                                        plugin_props(
+                                            plugin_id,
+                                            plugin,
+                                            &mut launcher_item_ids,
+                                        );
                                     config_files.extend(plugin_config_files);
                                     props
                                 },
@@ -170,10 +182,11 @@ fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
 fn plugin_props(
     plugin_id: i32,
     plugin: &ConfigPanelItem,
+    launcher_item_ids: impl Iterator<Item = i32>,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
     match plugin {
         ConfigPanelItem::Launcher(launcher) => {
-            plugin_launcher_props(plugin_id, launcher)
+            plugin_launcher_props(plugin_id, launcher, launcher_item_ids)
         },
         ConfigPanelItem::Separator(separator) => {
             plugin_separator_props(plugin_id, separator)
@@ -192,19 +205,18 @@ fn plugin_props(
 fn plugin_launcher_props(
     plugin_id: i32,
     launcher: &ConfigPanelItemLauncher,
+    item_ids: impl Iterator<Item = i32>,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
-    // TODO: better item_ids scheme
-    // needs to be globally incrementing
-    // also start with time_secs * 10
-    let item_ids = 1..;
+    let item_ids = item_ids
+        .take(launcher.items.iter().flatten().count())
+        .collect::<Vec<_>>();
     (
         opt_vec![
-            get_opt!(&launcher.items).map(|items| Property::new(
+            get_opt!(&launcher.items).map(|_items| Property::new(
                 "items",
                 Value::array(
                     item_ids
-                        .clone()
-                        .take(items.len())
+                        .iter()
                         .map(|item_id| {
                             Value::string(format!("{}.desktop", item_id))
                         })
@@ -236,6 +248,7 @@ fn plugin_launcher_props(
             }),
         ],
         item_ids
+            .into_iter()
             .zip(launcher.items.iter().flatten())
             .map(|(item_id, item)| {
                 plugin_launcher_item(plugin_id, item_id, item)
