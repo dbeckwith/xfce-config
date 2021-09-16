@@ -193,6 +193,7 @@ fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
         Pulseaudio { .. } => "pulseaudio",
         Screenshot { .. } => "screenshooter",
         ShowDesktop { .. } => "showdesktop",
+        SystemLoadMonitor { .. } => "systemload",
         WhiskerMenu { .. } => "whiskermenu",
     }
 }
@@ -227,6 +228,9 @@ fn plugin_props(
         Pulseaudio(pulseaudio) => plugin_pulseaudio_props(pulseaudio),
         Screenshot(screenshot) => plugin_screenshot_props(screenshot),
         ShowDesktop => Default::default(),
+        SystemLoadMonitor(system_load_monitor) => {
+            plugin_system_load_monitor_props(system_load_monitor)
+        },
         WhiskerMenu(_) => todo!(),
     }
 }
@@ -899,5 +903,151 @@ fn plugin_screenshot_props(
             .opt_vec(),
             sections: Vec::new(),
         })),
+    )
+}
+
+fn plugin_system_load_monitor_props(
+    system_load_monitor: &ConfigPanelItemSystemLoadMonitor,
+) -> (Vec<Property<'static>>, Option<ConfigFile>) {
+    fn fmt_color(color: &Color) -> Property<'static> {
+        Property::new(
+            "color",
+            Value::array(vec![
+                Value::double(color.0 as f64 / (u8::MAX as f64)),
+                Value::double(color.1 as f64 / (u8::MAX as f64)),
+                Value::double(color.2 as f64 / (u8::MAX as f64)),
+            ]),
+        )
+    }
+    (
+        [
+            get_opt!(&system_load_monitor.general.update_interval_ms).map(
+                |update_interval_ms| {
+                    Property::new("timeout", Value::uint(*update_interval_ms))
+                },
+            ),
+            get_opt!(&system_load_monitor.general.system_monitor_command).map(
+                |system_monitor_command| {
+                    Property::new(
+                        "system-monitor-command",
+                        Value::string(system_monitor_command.clone()),
+                    )
+                },
+            ),
+            get_opt!(&system_load_monitor.cpu_monitor).map(|cpu_monitor| {
+                Property::new(
+                    "cpu",
+                    Value::empty(
+                        [
+                            get_opt!(&cpu_monitor.enabled).map(|enabled| {
+                                Property::new("enabled", Value::bool(*enabled))
+                            }),
+                            get_opt!(&cpu_monitor.label).map(|label| {
+                                Property::new(
+                                    "label",
+                                    Value::string(label.clone()),
+                                )
+                            }),
+                            get_opt!(&cpu_monitor.color).map(fmt_color),
+                        ]
+                        .opt_vec(),
+                    ),
+                )
+            }),
+            get_opt!(&system_load_monitor.memory_monitor).map(
+                |memory_monitor| {
+                    Property::new(
+                        "memory",
+                        Value::empty(
+                            [
+                                get_opt!(&memory_monitor.enabled).map(
+                                    |enabled| {
+                                        Property::new(
+                                            "enabled",
+                                            Value::bool(*enabled),
+                                        )
+                                    },
+                                ),
+                                get_opt!(&memory_monitor.label).map(|label| {
+                                    Property::new(
+                                        "label",
+                                        Value::string(label.clone()),
+                                    )
+                                }),
+                                get_opt!(&memory_monitor.color).map(fmt_color),
+                            ]
+                            .opt_vec(),
+                        ),
+                    )
+                },
+            ),
+            get_opt!(&system_load_monitor.network_monitor).map(
+                |network_monitor| {
+                    Property::new(
+                        "network",
+                        Value::empty(
+                            [
+                                get_opt!(&network_monitor.enabled).map(
+                                    |enabled| {
+                                        Property::new(
+                                            "enabled",
+                                            Value::bool(*enabled),
+                                        )
+                                    },
+                                ),
+                                get_opt!(&network_monitor.label).map(|label| {
+                                    Property::new(
+                                        "label",
+                                        Value::string(label.clone()),
+                                    )
+                                }),
+                                get_opt!(&network_monitor.color).map(fmt_color),
+                            ]
+                            .opt_vec(),
+                        ),
+                    )
+                },
+            ),
+            get_opt!(&system_load_monitor.swap_monitor).map(|swap_monitor| {
+                Property::new(
+                    "swap",
+                    Value::empty(
+                        [
+                            get_opt!(&swap_monitor.enabled).map(|enabled| {
+                                Property::new("enabled", Value::bool(*enabled))
+                            }),
+                            get_opt!(&swap_monitor.label).map(|label| {
+                                Property::new(
+                                    "label",
+                                    Value::string(label.clone()),
+                                )
+                            }),
+                            get_opt!(&swap_monitor.color).map(fmt_color),
+                        ]
+                        .opt_vec(),
+                    ),
+                )
+            }),
+            get_opt!(&system_load_monitor.uptime_monitor).map(
+                |uptime_monitor| {
+                    Property::new(
+                        "uptime",
+                        Value::empty(
+                            [get_opt!(&uptime_monitor.enabled).map(
+                                |enabled| {
+                                    Property::new(
+                                        "enabled",
+                                        Value::bool(*enabled),
+                                    )
+                                },
+                            )]
+                            .opt_vec(),
+                        ),
+                    )
+                },
+            ),
+        ]
+        .opt_vec(),
+        None,
     )
 }

@@ -224,6 +224,36 @@ config_types_proc_macro::config_types! {
                 r#type: "show-desktop";
             }
             | {
+                r#type: "system-load-monitor";
+                general: {
+                    update_interval_ms: uint;
+                    system_monitor_command: str;
+                };
+                cpu_monitor: {
+                    enabled: bool;
+                    label: str;
+                    color: color;
+                };
+                memory_monitor: {
+                    enabled: bool;
+                    label: str;
+                    color: color;
+                };
+                network_monitor: {
+                    enabled: bool;
+                    label: str;
+                    color: color;
+                };
+                swap_monitor: {
+                    enabled: bool;
+                    label: str;
+                    color: color;
+                };
+                uptime_monitor: {
+                    enabled: bool;
+                };
+            }
+            | {
                 r#type: "whisker-menu";
                 appearance: {
                     panel_button: {

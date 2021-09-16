@@ -37,6 +37,7 @@ pub enum TypedValue<'a> {
     Bool(bool),
     Int(i32),
     Uint(u32),
+    Double(f64),
     String(Cow<'a, str>),
     Array(Vec<Value<'a>>),
     Empty,
@@ -112,6 +113,13 @@ impl<'a> Value<'a> {
         }
     }
 
+    pub fn double(f: f64) -> Self {
+        Self {
+            value: TypedValue::Double(f),
+            props: Vec::new(),
+        }
+    }
+
     pub fn string(s: impl Into<Cow<'a, str>>) -> Self {
         Self {
             value: TypedValue::String(s.into()),
@@ -179,6 +187,12 @@ impl Channel<'_> {
                         .context("missing value attribute")?
                         .parse()
                         .context("parsing value attribute as uint")?,
+                ),
+                "double" => TypedValue::Double(
+                    value
+                        .context("missing value attribute")?
+                        .parse()
+                        .context("parsing value attribute as double")?,
                 ),
                 "string" => TypedValue::String(
                     value.context("missing value attribute")?,
@@ -438,12 +452,13 @@ impl Channel<'_> {
             tag.push_attribute(Attribute {
                 key: b"type",
                 value: match value {
-                    TypedValue::Bool(_) => b"bool" as &[u8],
-                    TypedValue::Int(_) => b"int",
-                    TypedValue::Uint(_) => b"uint",
-                    TypedValue::String(_) => b"string",
-                    TypedValue::Array(_) => b"array",
-                    TypedValue::Empty => b"empty",
+                    TypedValue::Bool { .. } => b"bool" as &[u8],
+                    TypedValue::Int { .. } => b"int",
+                    TypedValue::Uint { .. } => b"uint",
+                    TypedValue::Double { .. } => b"double",
+                    TypedValue::String { .. } => b"string",
+                    TypedValue::Array { .. } => b"array",
+                    TypedValue::Empty { .. } => b"empty",
                 }
                 .into(),
             });
@@ -468,6 +483,12 @@ impl Channel<'_> {
                         value: n.to_string().into_bytes().into(),
                     });
                 },
+                TypedValue::Double(f) => {
+                    tag.push_attribute(Attribute {
+                        key: b"value",
+                        value: f.to_string().into_bytes().into(),
+                    });
+                },
                 TypedValue::String(s) => {
                     tag.push_attribute(Attribute {
                         key: b"value",
@@ -479,12 +500,8 @@ impl Channel<'_> {
             }
 
             let sub_values = match value {
-                TypedValue::Bool(_) => &[],
-                TypedValue::Int(_) => &[],
-                TypedValue::Uint(_) => &[],
-                TypedValue::String(_) => &[],
                 TypedValue::Array(items) => items.as_slice(),
-                TypedValue::Empty => &[],
+                _ => &[],
             };
 
             if props.is_empty() && sub_values.is_empty() {
