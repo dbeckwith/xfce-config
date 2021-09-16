@@ -128,7 +128,7 @@ config_types_proc_macro::config_types! {
                     );
                     color_mode: ("solid" | "gradient" | "fire");
                     show_current_usage_bar: bool;
-                    bars_color: str;
+                    bars_color: color;
                     show_frame: bool;
                     show_border: bool;
                 };

@@ -556,7 +556,7 @@ fn plugin_cpu_graph_props(
                     ),
                     get_opt!(&cpu_graph.appearance.bars_color).map(
                         |bars_color| {
-                            ("BarsColor".to_owned(), bars_color.clone())
+                            ("BarsColor".to_owned(), fmt_color(bars_color))
                         },
                     ),
                     get_opt!(&cpu_graph.appearance.show_frame).map(
