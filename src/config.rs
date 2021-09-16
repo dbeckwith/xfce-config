@@ -112,11 +112,10 @@ config_types_proc_macro::config_types! {
             | {
                 r#type: "cpu-graph";
                 appearance: {
-                    // TODO: color type?
-                    color1: str;
-                    color2: str;
-                    color3: str;
-                    background_color: str;
+                    color1: color;
+                    color2: color;
+                    color3: color;
+                    background_color: color;
                     mode: (
                         | "disabled"
                         | "normal"
@@ -240,3 +239,5 @@ config_types_proc_macro::config_types! {
         )];
     }];
 }
+
+pub struct Color(pub u8, pub u8, pub u8);

@@ -278,6 +278,9 @@ fn plugin_launcher_item(
             ConfigFile::Link(PathBuf::from(s))
         },
         ConfigPanelItemLauncherItem::Struct(item) => {
+            fn fmt_bool(b: bool) -> String {
+                if b { "true" } else { "false" }.to_owned()
+            }
             ConfigFile::File(ConfigFileFile {
                 path: PathBuf::from(format!(
                     "launcher-{}/{}.desktop",
@@ -304,12 +307,7 @@ fn plugin_launcher_item(
                                 |startup_notification| {
                                     (
                                         "StartupNotify".to_owned(),
-                                        if *startup_notification {
-                                            "true"
-                                        } else {
-                                            "false"
-                                        }
-                                        .to_owned(),
+                                        fmt_bool(*startup_notification),
                                     )
                                 },
                             ),
@@ -317,12 +315,7 @@ fn plugin_launcher_item(
                                 |run_in_terminal| {
                                     (
                                         "Terminal".to_owned(),
-                                        if *run_in_terminal {
-                                            "true"
-                                        } else {
-                                            "false"
-                                        }
-                                        .to_owned(),
+                                        fmt_bool(*run_in_terminal),
                                     )
                                 },
                             ),
@@ -513,6 +506,12 @@ fn plugin_cpu_graph_props(
     plugin_id: i32,
     cpu_graph: &ConfigPanelItemCpuGraph,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+    fn fmt_bool(b: bool) -> String {
+        if b { "1" } else { "0" }.to_owned()
+    }
+    fn fmt_color(Color(r, g, b): &Color) -> String {
+        format!("rgb({}, {}, {})", r, g, b)
+    }
     (
         Vec::new(),
         vec![ConfigFile::File(ConfigFileFile {
@@ -520,17 +519,20 @@ fn plugin_cpu_graph_props(
             contents: Cfg {
                 root_props: [
                     get_opt!(&cpu_graph.appearance.color1).map(|color1| {
-                        ("Foreground1".to_owned(), color1.clone())
+                        ("Foreground1".to_owned(), fmt_color(color1))
                     }),
                     get_opt!(&cpu_graph.appearance.color2).map(|color2| {
-                        ("Foreground2".to_owned(), color2.clone())
+                        ("Foreground2".to_owned(), fmt_color(color2))
                     }),
                     get_opt!(&cpu_graph.appearance.color3).map(|color3| {
-                        ("Foreground3".to_owned(), color3.clone())
+                        ("Foreground3".to_owned(), fmt_color(color3))
                     }),
                     get_opt!(&cpu_graph.appearance.background_color).map(
                         |background_color| {
-                            ("Background".to_owned(), background_color.clone())
+                            (
+                                "Background".to_owned(),
+                                fmt_color(background_color),
+                            )
                         },
                     ),
                     get_opt!(&cpu_graph.appearance.mode).map(|mode| {
@@ -540,8 +542,7 @@ fn plugin_cpu_graph_props(
                         |show_current_usage_bar| {
                             (
                                 "Bars".to_owned(),
-                                if *show_current_usage_bar { "1" } else { "0" }
-                                    .to_owned(),
+                                fmt_bool(*show_current_usage_bar),
                             )
                         },
                     ),
@@ -552,18 +553,12 @@ fn plugin_cpu_graph_props(
                     ),
                     get_opt!(&cpu_graph.appearance.show_frame).map(
                         |show_frame| {
-                            (
-                                "Frame".to_owned(),
-                                if *show_frame { "1" } else { "0" }.to_owned(),
-                            )
+                            ("Frame".to_owned(), fmt_bool(*show_frame))
                         },
                     ),
                     get_opt!(&cpu_graph.appearance.show_border).map(
                         |show_border| {
-                            (
-                                "Border".to_owned(),
-                                if *show_border { "1" } else { "0" }.to_owned(),
-                            )
+                            ("Border".to_owned(), fmt_bool(*show_border))
                         },
                     ),
                     get_opt!(&cpu_graph.advanced.update_interval).map(
@@ -596,8 +591,7 @@ fn plugin_cpu_graph_props(
                         |run_in_terminal| {
                             (
                                 "InTerminal".to_owned(),
-                                if *run_in_terminal { "1" } else { "0" }
-                                    .to_owned(),
+                                fmt_bool(*run_in_terminal),
                             )
                         },
                     ),
@@ -605,12 +599,7 @@ fn plugin_cpu_graph_props(
                         |use_startup_notification| {
                             (
                                 "StartupNotification".to_owned(),
-                                if *use_startup_notification {
-                                    "1"
-                                } else {
-                                    "0"
-                                }
-                                .to_owned(),
+                                fmt_bool(*use_startup_notification),
                             )
                         },
                     ),
@@ -618,8 +607,7 @@ fn plugin_cpu_graph_props(
                         |non_linear_time_scale| {
                             (
                                 "TimeScale".to_owned(),
-                                if *non_linear_time_scale { "1" } else { "0" }
-                                    .to_owned(),
+                                fmt_bool(*non_linear_time_scale),
                             )
                         },
                     ),
@@ -627,12 +615,7 @@ fn plugin_cpu_graph_props(
                         |per_core_history_graphs| {
                             (
                                 "PerCore".to_owned(),
-                                if *per_core_history_graphs {
-                                    "1"
-                                } else {
-                                    "0"
-                                }
-                                .to_owned(),
+                                fmt_bool(*per_core_history_graphs),
                             )
                         },
                     ),

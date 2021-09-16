@@ -90,6 +90,7 @@ mod kw {
     syn::custom_keyword!(int);
     syn::custom_keyword!(uint);
     syn::custom_keyword!(str);
+    syn::custom_keyword!(color);
 }
 
 #[derive(Debug)]
@@ -98,6 +99,7 @@ enum Type {
     Int(TypeInt),
     Uint(TypeUint),
     Str(TypeStr),
+    Color(TypeColor),
     LitStr(TypeLitStr),
     Array(TypeArray),
     Struct(TypeStruct),
@@ -122,6 +124,11 @@ struct TypeUint {
 #[derive(Debug)]
 struct TypeStr {
     str_token: kw::str,
+}
+
+#[derive(Debug)]
+struct TypeColor {
+    color_token: kw::color,
 }
 
 #[derive(Debug)]
@@ -166,6 +173,8 @@ impl Parse for Type {
             input.parse().map(Self::Uint)
         } else if lookahead.peek(kw::str) {
             input.parse().map(Self::Str)
+        } else if lookahead.peek(kw::color) {
+            input.parse().map(Self::Color)
         } else if lookahead.peek(LitStr) {
             input.parse().map(Self::LitStr)
         } else if lookahead.peek(Bracket) {
@@ -205,6 +214,13 @@ impl Parse for TypeStr {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let str_token = input.parse()?;
         Ok(Self { str_token })
+    }
+}
+
+impl Parse for TypeColor {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let color_token = input.parse()?;
+        Ok(Self { color_token })
     }
 }
 
@@ -281,6 +297,9 @@ impl EmitTypeDecls for Type {
                 type_uint.emit_type_decls(path, type_decls)
             },
             Type::Str(type_str) => type_str.emit_type_decls(path, type_decls),
+            Type::Color(type_color) => {
+                type_color.emit_type_decls(path, type_decls)
+            },
             Type::LitStr(type_lit_str) => {
                 type_lit_str.emit_type_decls(path, type_decls)
             },
@@ -328,6 +347,16 @@ impl EmitTypeDecls for TypeUint {
 }
 
 impl EmitTypeDecls for TypeStr {
+    fn emit_type_decls(
+        self,
+        _path: Path,
+        _type_decls: &mut Vec<Item>,
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl EmitTypeDecls for TypeColor {
     fn emit_type_decls(
         self,
         _path: Path,
@@ -386,6 +415,7 @@ impl EmitTypeDecls for TypeStruct {
                 Type::Int(_) => parse_quote!(i32),
                 Type::Uint(_) => parse_quote!(u32),
                 Type::Str(_) => parse_quote!(::std::string::String),
+                Type::Color(_) => parse_quote!(Color),
                 Type::LitStr(TypeLitStr { lit_str }) => {
                     return Err(Error::new_spanned(
                         lit_str,
@@ -632,6 +662,7 @@ fn emit_enum_unique(
                 Type::Int(_) => "Int",
                 Type::Uint(_) => "Uint",
                 Type::Str(_) => "Str",
+                Type::Color(_) => "Color",
                 Type::LitStr(_) => unreachable!(),
                 Type::Array(_) => unreachable!(),
                 Type::Struct(_) => "Struct",
@@ -644,6 +675,7 @@ fn emit_enum_unique(
             Type::Int(_) => parse_quote!(i32),
             Type::Uint(_) => parse_quote!(u32),
             Type::Str(_) => parse_quote!(::std::string::String),
+            Type::Color(_) => parse_quote!(Color),
             Type::LitStr(_) => unreachable!(),
             Type::Array(_) => unreachable!(),
             Type::Struct(_) => {
@@ -665,6 +697,7 @@ fn is_unique_types<'a>(types: impl Iterator<Item = &'a Type>) -> bool {
     let mut seen_bool = false;
     let mut seen_int = false;
     let mut seen_str = false;
+    let mut seen_color = false;
     let mut seen_struct = false;
     for ty in types {
         match ty {
@@ -691,6 +724,12 @@ fn is_unique_types<'a>(types: impl Iterator<Item = &'a Type>) -> bool {
                     return false;
                 }
                 seen_str = true;
+            },
+            Type::Color(_) => {
+                if seen_color {
+                    return false;
+                }
+                seen_color = true;
             },
             Type::LitStr(_) => unreachable!(),
             Type::Array(_) => unreachable!(),
