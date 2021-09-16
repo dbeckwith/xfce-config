@@ -455,7 +455,7 @@ impl EmitTypeDecls for TypeStruct {
         let name = path.join();
         let type_decl = parse_quote! {
             #[derive(::std::fmt::Debug, ::serde::Deserialize)]
-            #[serde(rename_all = "kebab-case")]
+            #[serde(deny_unknown_fields, rename_all = "kebab-case")]
             pub struct #name {
                 #(#decl_fields,)*
             }
@@ -526,7 +526,7 @@ impl EmitTypeDecls for TypeEnum {
         });
         let type_decl = parse_quote! {
             #[derive(::std::fmt::Debug, ::serde::Deserialize)]
-            #[serde(rename_all = "kebab-case")]
+            #[serde(deny_unknown_fields, rename_all = "kebab-case")]
             #serde_tag
             pub enum #name {
                 #(#decl_variants,)*
