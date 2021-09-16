@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::io::{BufRead, Write};
 
 #[derive(Debug, Default)]
@@ -8,11 +8,34 @@ pub struct Cfg {
 }
 
 impl Cfg {
-    pub fn read<R>(_reader: R) -> Result<Self>
+    pub fn read<R>(reader: R) -> Result<Self>
     where
         R: BufRead,
     {
-        todo!()
+        let mut cfg = Self::default();
+        for line in reader.lines() {
+            let line = line?;
+            if line.is_empty() {
+                // ignore
+            } else if let Some(line) = line.strip_prefix('[') {
+                if let Some(line) = line.strip_suffix(']') {
+                    cfg.sections.push((line.to_owned(), Vec::new()));
+                } else {
+                    bail!("section name missing trailing bracket");
+                }
+            } else if let Some((key, value)) = line.split_once('=') {
+                cfg.sections
+                    .last_mut()
+                    .map_or(
+                        &mut cfg.root_props,
+                        |(_section_name, section_props)| section_props,
+                    )
+                    .push((key.to_owned(), value.to_owned()));
+            } else {
+                bail!("line missing key-value separator");
+            }
+        }
+        Ok(cfg)
     }
 
     pub fn write<W>(&self, mut writer: W) -> Result<()>
