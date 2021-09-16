@@ -1,5 +1,6 @@
 #![warn(rust_2018_idioms, clippy::all)]
 #![deny(clippy::correctness)]
+#![allow(clippy::match_like_matches_macro)]
 
 use heck::CamelCase;
 use proc_macro_error::proc_macro_error;
@@ -7,6 +8,7 @@ use quote::{format_ident, quote};
 use syn::{
     braced,
     bracketed,
+    ext::IdentExt,
     parenthesized,
     parse::{Parse, ParseStream, Parser},
     parse_quote,
@@ -438,6 +440,7 @@ impl EmitTypeDecls for TypeStruct {
             ty.emit_type_decls(path, type_decls)?;
             let field = syn::Field::parse_named
                 .parse2(quote! {
+                    #[serde(default)]
                     pub #name: Option<#ty_name>
                 })
                 .unwrap();
@@ -446,6 +449,7 @@ impl EmitTypeDecls for TypeStruct {
         let name = path.join();
         let type_decl = parse_quote! {
             #[derive(::std::fmt::Debug, ::serde::Deserialize)]
+            #[serde(rename_all = "kebab-case")]
             pub struct #name {
                 #(#decl_fields,)*
             }
@@ -468,17 +472,23 @@ impl EmitTypeDecls for TypeEnum {
         } = self;
         let mut decl_variants = Vec::<syn::Variant>::new();
         let mut discrim_fns = Vec::<ItemFn>::new();
+        let discrim_field_name: Option<Option<Ident>>;
         if variants.iter().all(|ty| matches!(ty, Type::LitStr(_))) {
-            discrim_fns.extend(emit_enum_lit_str(variants, &mut decl_variants)?);
+            discrim_fns
+                .extend(emit_enum_lit_str(variants, &mut decl_variants)?);
+            discrim_field_name = None;
         } else if variants.iter().all(|ty| matches!(ty, Type::Struct(_))) {
-            discrim_fns.extend(emit_enum_struct(
+            let (discrim_field_name_, discrim_fns_) = emit_enum_struct(
                 variants,
                 &mut decl_variants,
                 path.clone(),
                 type_decls,
-            )?);
-        } else if variants.iter().all(|ty| {
-            !matches!(ty, Type::LitStr(_) | Type::Array(_) | Type::Enum(_))
+            )?;
+            discrim_field_name = Some(Some(discrim_field_name_));
+            discrim_fns.extend(discrim_fns_);
+        } else if variants.iter().all(|ty| match ty {
+            Type::LitStr(_) | Type::Array(_) | Type::Enum(_) => false,
+            _ => true,
         }) && is_unique_types(variants.iter())
         {
             emit_enum_unique(
@@ -487,12 +497,31 @@ impl EmitTypeDecls for TypeEnum {
                 path.clone(),
                 type_decls,
             )?;
+            discrim_field_name = Some(None);
         } else {
             return Err(Error::new(paren_token.span, "bad enum type"));
         }
         let name = path.join();
+        let serde_tag = discrim_field_name.map(|discrim_field_name| {
+            discrim_field_name.map_or_else(
+                || {
+                    quote! {
+                        #[serde(untagged)]
+                    }
+                },
+                |discrim_field_name| {
+                    let discrim_field_name =
+                        discrim_field_name.unraw().to_string();
+                    quote! {
+                        #[serde(tag = #discrim_field_name)]
+                    }
+                },
+            )
+        });
         let type_decl = parse_quote! {
             #[derive(::std::fmt::Debug, ::serde::Deserialize)]
+            #[serde(rename_all = "kebab-case")]
+            #serde_tag
             pub enum #name {
                 #(#decl_variants,)*
             }
@@ -566,7 +595,7 @@ fn emit_enum_struct(
     decl_variants: &mut Vec<syn::Variant>,
     path: Path,
     type_decls: &mut Vec<Item>,
-) -> Result<Vec<ItemFn>> {
+) -> Result<(Ident, Vec<ItemFn>)> {
     let mut discrim_field_name = None::<Ident>;
     let mut discrim_values = Vec::new();
     for ty in variants {
@@ -641,13 +670,16 @@ fn emit_enum_struct(
             }
         },
     );
-    Ok(vec![parse_quote! {
-        pub fn #discrim_field_name(&self) -> &'static str {
-            match self {
-                #(#match_arms,)*
+    Ok((
+        discrim_field_name.clone(),
+        vec![parse_quote! {
+            pub fn #discrim_field_name(&self) -> &'static str {
+                match self {
+                    #(#match_arms,)*
+                }
             }
-        }
-    }])
+        }],
+    ))
 }
 
 fn emit_enum_unique(
