@@ -221,6 +221,9 @@ config_types_proc_macro::config_types! {
                 capture_delay: uint;
             }
             | {
+                r#type: "show-desktop";
+            }
+            | {
                 r#type: "whisker-menu";
                 appearance: {
                     panel_button: {

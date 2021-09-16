@@ -184,18 +184,19 @@ fn panel_props(
 fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
     use ConfigPanelItem::*;
     match plugin {
-        Launcher(_) => "launcher",
-        Separator(_) => "separator",
-        ActionButtons(_) => "actions",
-        ApplicationsMenu(_) => "applicationsmenu",
-        Clock(_) => "clock",
-        CpuGraph(_) => "cpugraph",
-        DirectoryMenu(_) => "directorymenu",
-        FreeSpaceChecker(_) => "fsguard",
-        NetworkMonitor(_) => "netload",
-        Pulseaudio(_) => "pulseaudio",
-        Screenshot(_) => "screenshooter",
-        WhiskerMenu(_) => "whiskermenu",
+        Launcher { .. } => "launcher",
+        Separator { .. } => "separator",
+        ActionButtons { .. } => "actions",
+        ApplicationsMenu { .. } => "applicationsmenu",
+        Clock { .. } => "clock",
+        CpuGraph { .. } => "cpugraph",
+        DirectoryMenu { .. } => "directorymenu",
+        FreeSpaceChecker { .. } => "fsguard",
+        NetworkMonitor { .. } => "netload",
+        Pulseaudio { .. } => "pulseaudio",
+        Screenshot { .. } => "screenshooter",
+        ShowDesktop { .. } => "showdesktop",
+        WhiskerMenu { .. } => "whiskermenu",
     }
 }
 
@@ -228,6 +229,7 @@ fn plugin_props(
         },
         Pulseaudio(pulseaudio) => plugin_pulseaudio_props(pulseaudio),
         Screenshot(screenshot) => plugin_screenshot_props(screenshot),
+        ShowDesktop => Default::default(),
         WhiskerMenu(_) => todo!(),
     }
 }
