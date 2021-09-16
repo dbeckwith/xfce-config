@@ -13,11 +13,11 @@ fn main() -> Result<()> {
     for config_file in config_files {
         match config_file {
             xfce_config::ConfigFile::Link(xfce_config::ConfigFileLink {
-                from,
-                to,
+                path,
+                link_from,
             }) => {
-                eprintln!("{}:", from.display());
-                eprintln!("link to {}", to.display());
+                eprintln!("{}:", path.display());
+                eprintln!("link from {}", link_from.display());
             },
             xfce_config::ConfigFile::File(xfce_config::ConfigFileFile {
                 path,

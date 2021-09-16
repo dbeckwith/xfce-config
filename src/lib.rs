@@ -14,8 +14,8 @@ pub enum ConfigFile {
 }
 
 pub struct ConfigFileLink {
-    pub from: PathBuf,
-    pub to: PathBuf,
+    pub path: PathBuf,
+    pub link_from: PathBuf,
 }
 
 pub struct ConfigFileFile {
@@ -284,8 +284,8 @@ fn plugin_launcher_item(
         ConfigPanelItemLauncherItem::Str(s) => {
             // TODO: support URL items
             ConfigFile::Link(ConfigFileLink {
-                from: PathBuf::from(s),
-                to: path,
+                path,
+                link_from: PathBuf::from(s),
             })
         },
         ConfigPanelItemLauncherItem::Struct(item) => {
