@@ -211,6 +211,16 @@ config_types_proc_macro::config_types! {
                 playback_keyboard_shortcuts: bool;
             }
             | {
+                r#type: "screenshot";
+                capture_region: (
+                    | "entire-screen"
+                    | "active-window"
+                    | "selection-region"
+                );
+                capture_cursor: bool;
+                capture_delay: uint;
+            }
+            | {
                 r#type: "whisker-menu";
                 appearance: {
                     panel_button: {

@@ -188,9 +188,12 @@ fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
         FreeSpaceChecker(_) => "fsguard",
         NetworkMonitor(_) => "netload",
         Pulseaudio(_) => "pulseaudio",
+        Screenshot(_) => "screenshooter",
         WhiskerMenu(_) => "whiskermenu",
     }
 }
+
+// TODO: better capture common patterns of config file names
 
 fn plugin_props(
     plugin_id: i32,
@@ -222,6 +225,9 @@ fn plugin_props(
         },
         Pulseaudio(pulseaudio) => {
             plugin_pulseaudio_props(plugin_id, pulseaudio)
+        },
+        Screenshot(screenshot) => {
+            plugin_screenshot_props(plugin_id, screenshot)
         },
         WhiskerMenu(_) => todo!(),
     }
@@ -926,5 +932,42 @@ fn plugin_pulseaudio_props(
         ]
         .opt_vec(),
         Vec::new(),
+    )
+}
+
+fn plugin_screenshot_props(
+    plugin_id: i32,
+    screenshot: &ConfigPanelItemScreenshot,
+) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+    fn fmt_bool(b: bool) -> String {
+        if b { "1" } else { "0" }.to_owned()
+    }
+    (
+        Vec::new(),
+        vec![ConfigFile::File(ConfigFileFile {
+            path: PathBuf::from(format!("screenshooter-{}.rc", plugin_id)),
+            contents: Cfg {
+                root_props: [
+                    get_opt!(&screenshot.capture_region).map(
+                        |capture_region| {
+                            (
+                                "region".to_owned(),
+                                (capture_region.discrim() + 1).to_string(),
+                            )
+                        },
+                    ),
+                    get_opt!(&screenshot.capture_cursor).map(
+                        |capture_cursor| {
+                            ("show_mouse".to_owned(), fmt_bool(*capture_cursor))
+                        },
+                    ),
+                    get_opt!(&screenshot.capture_delay).map(|capture_delay| {
+                        ("delay".to_owned(), capture_delay.to_string())
+                    }),
+                ]
+                .opt_vec(),
+                sections: Vec::new(),
+            },
+        })],
     )
 }
