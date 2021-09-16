@@ -57,7 +57,8 @@ macro_rules! get_opt {
 
 pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
     let mut config_files = Vec::new();
-    let panel_ids = RangeFrom { start: 0 };
+    let panel_ids =
+        RangeFrom { start: 0 }.take(config.panels.as_ref().map_or(0, Vec::len));
     let plugin_ids = RangeFrom { start: 1 };
     let mut launcher_item_ids = RangeFrom {
         start: SystemTime::now()
