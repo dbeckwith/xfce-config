@@ -6,7 +6,7 @@ pub mod channel;
 pub mod config;
 
 use self::{cfg::*, channel::*, config::*};
-use std::{convert::TryFrom, path::PathBuf, time::SystemTime};
+use std::{array, convert::TryFrom, path::PathBuf, time::SystemTime};
 
 pub enum ConfigFile {
     Link(PathBuf),
@@ -18,21 +18,14 @@ pub struct ConfigFileFile {
     pub contents: cfg::Cfg,
 }
 
-macro_rules! opt_vec {
-    ($($item:expr),*$(,)?) => {{
-        let mut vec = Vec::with_capacity(opt_vec!(@count $($item:expr;)*));
-        $(if let Some(item) = $item {
-            vec.push(item);
-        })*
-        vec.shrink_to_fit();
-        vec
-    }};
-    (@count $head:expr; $($item:expr;)*) => {
-        1 + opt_vec!(@count $($item;)*)
-    };
-    (@count) => {
-        0
-    };
+trait OptVec<T> {
+    fn opt_vec(self) -> Vec<T>;
+}
+
+impl<T, const N: usize> OptVec<T> for [Option<T>; N] {
+    fn opt_vec(self) -> Vec<T> {
+        array::IntoIter::new(self).flatten().collect()
+    }
 }
 
 macro_rules! get_opt {
@@ -72,7 +65,7 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
     let channel = Channel::new(
         "xfce4-panel",
         "1.0",
-        opt_vec![
+        [
             Some(Property::new("configver", Value::int(2))),
             get_opt!(&config.panels).map(|panels| {
                 Property::new(
@@ -122,7 +115,8 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
                 (!plugins.is_empty())
                     .then(|| Property::new("plugins", Value::empty(plugins)))
             }),
-        ],
+        ]
+        .opt_vec(),
     );
     (channel, config_files)
 }
@@ -131,41 +125,48 @@ fn panel_props(
     panel: &ConfigPanel,
     plugin_ids: impl Iterator<Item = i32>,
 ) -> Value<'static> {
-    Value::empty(opt_vec![
-        get_opt!(&panel.display.general.mode)
-            .map(|mode| { Property::new("mode", Value::uint(mode.discrim())) }),
-        get_opt!(&panel.display.general.locked).map(|locked| Property::new(
-            "position-locked",
-            Value::bool(!*locked)
-        )),
-        get_opt!(&panel.display.general.auto_hide).map(|auto_hide| {
-            Property::new("autohide-behavior", Value::uint(auto_hide.discrim()))
-        }),
-        get_opt!(&panel.display.general.reserve_border_space).map(
-            |reserve_border_space| Property::new(
-                "disable-struts",
-                Value::bool(!*reserve_border_space)
-            )
-        ),
-        get_opt!(&panel.display.measurements.row_size)
-            .map(|row_size| Property::new("size", Value::uint(*row_size))),
-        get_opt!(&panel.display.measurements.row_count).map(|row_count| {
-            Property::new("nrows", Value::uint(*row_count))
-        }),
-        get_opt!(&panel.display.measurements.length)
-            .map(|length| Property::new("length", Value::uint(*length))),
-        get_opt!(&panel.display.measurements.auto_size).map(|auto_size| {
-            Property::new("length-adjust", Value::bool(*auto_size))
-        }),
-        get_opt!(&panel.items).map(|items| {
-            Property::new(
-                "plugin_ids",
-                Value::array(
-                    plugin_ids.take(items.len()).map(Value::int).collect(),
-                ),
-            )
-        }),
-    ])
+    Value::empty(
+        [
+            get_opt!(&panel.display.general.mode)
+                .map(|mode| Property::new("mode", Value::uint(mode.discrim()))),
+            get_opt!(&panel.display.general.locked).map(|locked| {
+                Property::new("position-locked", Value::bool(!*locked))
+            }),
+            get_opt!(&panel.display.general.auto_hide).map(|auto_hide| {
+                Property::new(
+                    "autohide-behavior",
+                    Value::uint(auto_hide.discrim()),
+                )
+            }),
+            get_opt!(&panel.display.general.reserve_border_space).map(
+                |reserve_border_space| {
+                    Property::new(
+                        "disable-struts",
+                        Value::bool(!*reserve_border_space),
+                    )
+                },
+            ),
+            get_opt!(&panel.display.measurements.row_size)
+                .map(|row_size| Property::new("size", Value::uint(*row_size))),
+            get_opt!(&panel.display.measurements.row_count).map(|row_count| {
+                Property::new("nrows", Value::uint(*row_count))
+            }),
+            get_opt!(&panel.display.measurements.length)
+                .map(|length| Property::new("length", Value::uint(*length))),
+            get_opt!(&panel.display.measurements.auto_size).map(|auto_size| {
+                Property::new("length-adjust", Value::bool(*auto_size))
+            }),
+            get_opt!(&panel.items).map(|items| {
+                Property::new(
+                    "plugin_ids",
+                    Value::array(
+                        plugin_ids.take(items.len()).map(Value::int).collect(),
+                    ),
+                )
+            }),
+        ]
+        .opt_vec(),
+    )
 }
 
 fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
@@ -211,26 +212,30 @@ fn plugin_launcher_props(
         .take(launcher.items.iter().flatten().count())
         .collect::<Vec<_>>();
     (
-        opt_vec![
-            get_opt!(&launcher.items).map(|_items| Property::new(
-                "items",
-                Value::array(
-                    item_ids
-                        .iter()
-                        .map(|item_id| {
-                            Value::string(format!("{}.desktop", item_id))
-                        })
-                        .collect(),
-                ),
-            )),
+        [
+            get_opt!(&launcher.items).map(|_items| {
+                Property::new(
+                    "items",
+                    Value::array(
+                        item_ids
+                            .iter()
+                            .map(|item_id| {
+                                Value::string(format!("{}.desktop", item_id))
+                            })
+                            .collect(),
+                    ),
+                )
+            }),
             get_opt!(&launcher.show_tooltips).map(|show_tooltips| {
                 Property::new("disable-tooltips", Value::bool(!show_tooltips))
             }),
             get_opt!(&launcher.label_instead_of_icon).map(
-                |label_instead_of_icon| Property::new(
-                    "show-label",
-                    Value::bool(*label_instead_of_icon),
-                )
+                |label_instead_of_icon| {
+                    Property::new(
+                        "show-label",
+                        Value::bool(*label_instead_of_icon),
+                    )
+                },
             ),
             get_opt!(&launcher.show_last_used_item).map(
                 |show_last_used_item| {
@@ -238,7 +243,7 @@ fn plugin_launcher_props(
                         "move-first",
                         Value::bool(*show_last_used_item),
                     )
-                }
+                },
             ),
             get_opt!(&launcher.arrow_position).map(|arrow_position| {
                 Property::new(
@@ -246,7 +251,8 @@ fn plugin_launcher_props(
                     Value::uint(arrow_position.discrim()),
                 )
             }),
-        ],
+        ]
+        .opt_vec(),
         item_ids
             .into_iter()
             .zip(launcher.items.iter().flatten())
@@ -277,44 +283,47 @@ fn plugin_launcher_item(
                     root_props: Vec::new(),
                     sections: vec![(
                         "Desktop Entry".to_owned(),
-                        opt_vec![
+                        [
                             Some(("Version".to_owned(), "1.0".to_owned())),
                             Some(("Type".to_owned(), "Application".to_owned())),
                             get_opt!(&item.name)
                                 .map(|name| ("Name".to_owned(), name.clone())),
-                            get_opt!(&item.comment).map(|comment| (
-                                "Comment".to_owned(),
-                                comment.clone(),
-                            )),
-                            get_opt!(&item.command).map(|command| (
-                                "Exec".to_owned(),
-                                command.clone(),
-                            )),
+                            get_opt!(&item.comment).map(|comment| {
+                                ("Comment".to_owned(), comment.clone())
+                            }),
+                            get_opt!(&item.command).map(|command| {
+                                ("Exec".to_owned(), command.clone())
+                            }),
                             get_opt!(&item.icon)
                                 .map(|icon| ("Icon".to_owned(), icon.clone())),
                             get_opt!(&item.startup_notification).map(
-                                |startup_notification| (
-                                    "StartupNotify".to_owned(),
-                                    if *startup_notification {
-                                        "true"
-                                    } else {
-                                        "false"
-                                    }
-                                    .to_owned(),
-                                )
+                                |startup_notification| {
+                                    (
+                                        "StartupNotify".to_owned(),
+                                        if *startup_notification {
+                                            "true"
+                                        } else {
+                                            "false"
+                                        }
+                                        .to_owned(),
+                                    )
+                                },
                             ),
                             get_opt!(&item.run_in_terminal).map(
-                                |run_in_terminal| (
-                                    "Terminal".to_owned(),
-                                    if *run_in_terminal {
-                                        "true"
-                                    } else {
-                                        "false"
-                                    }
-                                    .to_owned(),
-                                )
+                                |run_in_terminal| {
+                                    (
+                                        "Terminal".to_owned(),
+                                        if *run_in_terminal {
+                                            "true"
+                                        } else {
+                                            "false"
+                                        }
+                                        .to_owned(),
+                                    )
+                                },
                             ),
-                        ],
+                        ]
+                        .opt_vec(),
                     )],
                 },
             })
@@ -327,14 +336,14 @@ fn plugin_separator_props(
     separator: &ConfigPanelItemSeparator,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
     (
-        opt_vec![
-            get_opt!(&separator.style).map(|style| Property::new(
-                "style",
-                Value::uint(style.discrim()),
-            )),
+        [
+            get_opt!(&separator.style).map(|style| {
+                Property::new("style", Value::uint(style.discrim()))
+            }),
             get_opt!(&separator.expand)
                 .map(|expand| Property::new("expand", Value::bool(*expand))),
-        ],
+        ]
+        .opt_vec(),
         Vec::new(),
     )
 }
@@ -344,21 +353,20 @@ fn plugin_action_buttons_props(
     action_buttons: &ConfigPanelItemActionButtons,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
     (
-        opt_vec![
+        [
             get_opt!(&action_buttons.general.appearance).map(|appearance| {
                 Property::new("appearance", Value::uint(appearance.discrim()))
             }),
-            get_opt!(&action_buttons.general.title).map(|title| Property::new(
-                "title",
-                Value::uint(title.discrim()),
-            )),
+            get_opt!(&action_buttons.general.title).map(|title| {
+                Property::new("title", Value::uint(title.discrim()))
+            }),
             get_opt!(&action_buttons.general.custom_title).map(
                 |custom_title| {
                     Property::new(
                         "custom-title",
                         Value::string(custom_title.clone()),
                     )
-                }
+                },
             ),
             get_opt!(&action_buttons.actions.items).and_then(|items| {
                 (!items.is_empty()).then(|| {
@@ -391,9 +399,10 @@ fn plugin_action_buttons_props(
                         "ask-confirmation",
                         Value::bool(*show_confirmation_dialog),
                     )
-                }
+                },
             ),
-        ],
+        ]
+        .opt_vec(),
         Vec::new(),
     )
 }
@@ -403,44 +412,54 @@ fn plugin_applications_menu_props(
     applications_menu: &ConfigPanelItemApplicationsMenu,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
     (
-        opt_vec![
+        [
             get_opt!(&applications_menu.appearance.show_generic_names).map(
-                |show_generic_names| Property::new(
-                    "show-generic-names",
-                    Value::bool(*show_generic_names)
-                )
+                |show_generic_names| {
+                    Property::new(
+                        "show-generic-names",
+                        Value::bool(*show_generic_names),
+                    )
+                },
             ),
             get_opt!(&applications_menu.appearance.show_menu_icons).map(
-                |show_menu_icons| Property::new(
-                    "show-menu-icons",
-                    Value::bool(*show_menu_icons)
-                )
+                |show_menu_icons| {
+                    Property::new(
+                        "show-menu-icons",
+                        Value::bool(*show_menu_icons),
+                    )
+                },
             ),
             get_opt!(&applications_menu.appearance.show_tooltips).map(
-                |show_tooltips| Property::new(
-                    "show-tooltips",
-                    Value::bool(*show_tooltips)
-                )
+                |show_tooltips| {
+                    Property::new("show-tooltips", Value::bool(*show_tooltips))
+                },
             ),
             get_opt!(&applications_menu.appearance.show_button_title).map(
-                |show_button_title| Property::new(
-                    "show-button-title",
-                    Value::bool(*show_button_title)
-                )
+                |show_button_title| {
+                    Property::new(
+                        "show-button-title",
+                        Value::bool(*show_button_title),
+                    )
+                },
             ),
             get_opt!(&applications_menu.appearance.button_title).map(
-                |button_title| Property::new(
-                    "button-title",
-                    Value::string(button_title.clone())
-                )
+                |button_title| {
+                    Property::new(
+                        "button-title",
+                        Value::string(button_title.clone()),
+                    )
+                },
             ),
             get_opt!(&applications_menu.appearance.button_icon).map(
-                |button_icon| Property::new(
-                    "button-icon",
-                    Value::string(button_icon.clone())
-                )
+                |button_icon| {
+                    Property::new(
+                        "button-icon",
+                        Value::string(button_icon.clone()),
+                    )
+                },
             ),
-        ],
+        ]
+        .opt_vec(),
         Vec::new(),
     )
 }
@@ -450,14 +469,13 @@ fn plugin_clock_props(
     clock: &ConfigPanelItemClock,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
     (
-        opt_vec![
+        [
             get_opt!(&clock.time_settings.timezone).map(|timezone| {
                 Property::new("timezone", Value::string(timezone.clone()))
             }),
-            get_opt!(&clock.appearance.layout).map(|layout| Property::new(
-                "mode",
-                Value::uint(layout.discrim())
-            )),
+            get_opt!(&clock.appearance.layout).map(|layout| {
+                Property::new("mode", Value::uint(layout.discrim()))
+            }),
             get_opt!(&clock.appearance.tooltip_format).map(|tooltip_format| {
                 Property::new(
                     "tooltip-format",
@@ -471,15 +489,18 @@ fn plugin_clock_props(
                 Property::new("show-military", Value::bool(*show_military))
             }),
             get_opt!(&clock.clock_options.flash_time_separators).map(
-                |flash_time_separators| Property::new(
-                    "flash-separators",
-                    Value::bool(*flash_time_separators)
-                )
+                |flash_time_separators| {
+                    Property::new(
+                        "flash-separators",
+                        Value::bool(*flash_time_separators),
+                    )
+                },
             ),
             get_opt!(&clock.clock_options.show_am_pm).map(|show_am_pm| {
                 Property::new("show-meridiem", Value::bool(*show_am_pm))
             }),
-        ],
+        ]
+        .opt_vec(),
         Vec::new(),
     )
 }
