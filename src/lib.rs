@@ -1,10 +1,11 @@
 #![warn(rust_2018_idioms, clippy::all)]
 #![deny(clippy::correctness)]
 
+pub mod cfg;
 pub mod channel;
 pub mod config;
 
-use self::{channel::*, config::*};
+use self::{cfg::*, channel::*, config::*};
 use std::path::PathBuf;
 
 pub enum ConfigFile {
@@ -14,10 +15,8 @@ pub enum ConfigFile {
 
 pub struct ConfigFileFile {
     pub path: PathBuf,
-    pub contents: Cfg,
+    pub contents: cfg::Cfg,
 }
-
-pub struct Cfg {}
 
 macro_rules! opt_vec {
     ($($item:expr),*$(,)?) => {{
@@ -238,25 +237,76 @@ fn plugin_launcher_props(
         ],
         item_ids
             .zip(launcher.items.iter().flatten())
-            .map(|(item_id, item)| match item {
-                ConfigPanelItemLauncherItem::Str(s) => {
-                    // TODO: support URL items
-                    ConfigFile::Link(PathBuf::from(s))
-                },
-                ConfigPanelItemLauncherItem::Struct(item) => {
-                    ConfigFile::File(ConfigFileFile {
-                        path: PathBuf::from(format!(
-                            "launcher-{}/{}.desktop",
-                            plugin_id, item_id
-                        )),
-                        contents: Cfg {
-                            // TODO: launcher cfg file
-                        },
-                    })
-                },
+            .map(|(item_id, item)| {
+                plugin_launcher_item(plugin_id, item_id, item)
             })
             .collect(),
     )
+}
+
+fn plugin_launcher_item(
+    plugin_id: i32,
+    item_id: i32,
+    item: &ConfigPanelItemLauncherItem,
+) -> ConfigFile {
+    match item {
+        ConfigPanelItemLauncherItem::Str(s) => {
+            // TODO: support URL items
+            ConfigFile::Link(PathBuf::from(s))
+        },
+        ConfigPanelItemLauncherItem::Struct(item) => {
+            ConfigFile::File(ConfigFileFile {
+                path: PathBuf::from(format!(
+                    "launcher-{}/{}.desktop",
+                    plugin_id, item_id
+                )),
+                contents: Cfg {
+                    root_props: Vec::new(),
+                    sections: vec![(
+                        "Desktop Entry".to_owned(),
+                        opt_vec![
+                            Some(("Version".to_owned(), "1.0".to_owned())),
+                            Some(("Type".to_owned(), "Application".to_owned())),
+                            get_opt!(&item.name)
+                                .map(|name| ("Name".to_owned(), name.clone())),
+                            get_opt!(&item.comment).map(|comment| (
+                                "Comment".to_owned(),
+                                comment.clone(),
+                            )),
+                            get_opt!(&item.command).map(|command| (
+                                "Exec".to_owned(),
+                                command.clone(),
+                            )),
+                            get_opt!(&item.icon)
+                                .map(|icon| ("Icon".to_owned(), icon.clone())),
+                            get_opt!(&item.startup_notification).map(
+                                |startup_notification| (
+                                    "StartupNotify".to_owned(),
+                                    if *startup_notification {
+                                        "true"
+                                    } else {
+                                        "false"
+                                    }
+                                    .to_owned(),
+                                )
+                            ),
+                            get_opt!(&item.run_in_terminal).map(
+                                |run_in_terminal| (
+                                    "Terminal".to_owned(),
+                                    if *run_in_terminal {
+                                        "true"
+                                    } else {
+                                        "false"
+                                    }
+                                    .to_owned(),
+                                )
+                            ),
+                        ],
+                    )],
+                },
+            })
+        },
+    }
 }
 
 fn plugin_separator_props(
