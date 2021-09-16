@@ -6,7 +6,13 @@ pub mod channel;
 pub mod config;
 
 use self::{cfg::*, channel::*, config::*};
-use std::{array, convert::TryFrom, path::PathBuf, time::SystemTime};
+use std::{
+    array,
+    convert::TryFrom,
+    ops::RangeFrom,
+    path::PathBuf,
+    time::SystemTime,
+};
 
 pub enum ConfigFile {
     Link(PathBuf),
@@ -52,16 +58,18 @@ macro_rules! get_opt {
 
 pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
     let mut config_files = Vec::new();
-    let panel_ids = 0..;
-    let plugin_ids = 1..;
-    let mut launcher_item_ids = i32::try_from(
-        SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            * 10,
-    )
-    .unwrap()..;
+    let panel_ids = RangeFrom { start: 0 };
+    let plugin_ids = RangeFrom { start: 1 };
+    let mut launcher_item_ids = RangeFrom {
+        start: i32::try_from(
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                * 10,
+        )
+        .unwrap(),
+    };
     let channel = Channel::new(
         "xfce4-panel",
         "1.0",
