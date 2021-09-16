@@ -200,6 +200,16 @@ config_types_proc_macro::config_types! {
                 bar_color_out: color;
                 colorize_values: bool;
             }
+            // TODO: notification-plugin
+            // config is in xfce4-notifyd perchannel-xml
+            | {
+                r#type: "pulseaudio";
+                volume_keyboard_shortcuts: bool;
+                volume_notifications: bool;
+                audio_mixer: str;
+                control_media_players: bool;
+                playback_keyboard_shortcuts: bool;
+            }
             | {
                 r#type: "whisker-menu";
                 appearance: {

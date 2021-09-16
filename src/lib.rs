@@ -187,6 +187,7 @@ fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
         DirectoryMenu(_) => "directorymenu",
         FreeSpaceChecker(_) => "fsguard",
         NetworkMonitor(_) => "netload",
+        Pulseaudio(_) => "pulseaudio",
         WhiskerMenu(_) => "whiskermenu",
     }
 }
@@ -218,6 +219,9 @@ fn plugin_props(
         },
         NetworkMonitor(network_monitor) => {
             plugin_network_monitor_props(plugin_id, network_monitor)
+        },
+        Pulseaudio(pulseaudio) => {
+            plugin_pulseaudio_props(plugin_id, pulseaudio)
         },
         WhiskerMenu(_) => todo!(),
     }
@@ -872,5 +876,55 @@ fn plugin_network_monitor_props(
                 sections: Vec::new(),
             },
         })],
+    )
+}
+
+fn plugin_pulseaudio_props(
+    _plugin_id: i32,
+    pulseaudio: &ConfigPanelItemPulseaudio,
+) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+    (
+        [
+            get_opt!(&pulseaudio.volume_keyboard_shortcuts).map(
+                |volume_keyboard_shortcuts| {
+                    Property::new(
+                        "enable-keyboard-shortcuts",
+                        Value::bool(*volume_keyboard_shortcuts),
+                    )
+                },
+            ),
+            get_opt!(&pulseaudio.volume_notifications).map(
+                |volume_notifications| {
+                    Property::new(
+                        "show-notifications",
+                        Value::bool(*volume_notifications),
+                    )
+                },
+            ),
+            get_opt!(&pulseaudio.audio_mixer).map(|audio_mixer| {
+                Property::new(
+                    "mixer-command",
+                    Value::string(audio_mixer.clone()),
+                )
+            }),
+            get_opt!(&pulseaudio.control_media_players).map(
+                |control_media_players| {
+                    Property::new(
+                        "enable-mpris",
+                        Value::bool(*control_media_players),
+                    )
+                },
+            ),
+            get_opt!(&pulseaudio.playback_keyboard_shortcuts).map(
+                |playback_keyboard_shortcuts| {
+                    Property::new(
+                        "enable-multimedia-keys",
+                        Value::bool(*playback_keyboard_shortcuts),
+                    )
+                },
+            ),
+        ]
+        .opt_vec(),
+        Vec::new(),
     )
 }
