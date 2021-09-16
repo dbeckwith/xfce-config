@@ -518,7 +518,7 @@ fn plugin_cpu_graph_props(
         if b { "1" } else { "0" }.to_owned()
     }
     fn fmt_color(Color(r, g, b): &Color) -> String {
-        format!("rgb({}, {}, {})", r, g, b)
+        format!("rgb({},{},{})", r, g, b)
     }
     (
         Vec::new(),
