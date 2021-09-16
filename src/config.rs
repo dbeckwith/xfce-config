@@ -110,6 +110,48 @@ config_types_proc_macro::config_types! {
                 };
             }
             | {
+                r#type: "cpu-graph";
+                appearance: {
+                    // TODO: color type?
+                    color1: str;
+                    color2: str;
+                    color3: str;
+                    background_color: str;
+                    mode: (
+                        | "disabled"
+                        | "normal"
+                        | "led"
+                        | "no-history"
+                        | "grid"
+                    );
+                    color_mode: ("solid" | "gradient" | "fire");
+                    show_current_usage_bar: bool;
+                    bars_color: str;
+                    show_frame: bool;
+                    show_border: bool;
+                };
+                advanced: {
+                    update_interval: (
+                        | "fastest"
+                        | "fast"
+                        | "normal"
+                        | "slow"
+                        | "slowest"
+                    );
+                    // TODO: better way to represent tracked_core?
+                    // 0 for all, number for specific
+                    tracked_core: uint;
+                    width: uint;
+                    threshold: uint;
+                    associated_command: str;
+                    run_in_terminal: bool;
+                    use_startup_notification: bool;
+                    non_linear_time_scale: bool;
+                    per_core_history_graphs: bool;
+                    // TODO: per-core history graph spacing
+                };
+            }
+            | {
                 r#type: "whisker-menu";
                 appearance: {
                     panel_button: {

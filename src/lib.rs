@@ -176,6 +176,7 @@ fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
         ConfigPanelItem::ActionButtons(_) => "actions",
         ConfigPanelItem::ApplicationsMenu(_) => "applicationsmenu",
         ConfigPanelItem::Clock(_) => "clock",
+        ConfigPanelItem::CpuGraph(_) => "cpugraph",
         ConfigPanelItem::WhiskerMenu(_) => "whiskermenu",
     }
 }
@@ -199,6 +200,9 @@ fn plugin_props(
             plugin_applications_menu_props(plugin_id, applications_menu)
         },
         ConfigPanelItem::Clock(clock) => plugin_clock_props(plugin_id, clock),
+        ConfigPanelItem::CpuGraph(cpu_graph) => {
+            plugin_cpu_graph_props(plugin_id, cpu_graph)
+        },
         ConfigPanelItem::WhiskerMenu(_) => todo!(),
     }
 }
@@ -502,5 +506,140 @@ fn plugin_clock_props(
         ]
         .opt_vec(),
         Vec::new(),
+    )
+}
+
+fn plugin_cpu_graph_props(
+    plugin_id: i32,
+    cpu_graph: &ConfigPanelItemCpuGraph,
+) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+    (
+        Vec::new(),
+        vec![ConfigFile::File(ConfigFileFile {
+            path: PathBuf::from(format!("cpugraph-{}.rc", plugin_id)),
+            contents: Cfg {
+                root_props: [
+                    get_opt!(&cpu_graph.appearance.color1).map(|color1| {
+                        ("Foreground1".to_owned(), color1.clone())
+                    }),
+                    get_opt!(&cpu_graph.appearance.color2).map(|color2| {
+                        ("Foreground2".to_owned(), color2.clone())
+                    }),
+                    get_opt!(&cpu_graph.appearance.color3).map(|color3| {
+                        ("Foreground3".to_owned(), color3.clone())
+                    }),
+                    get_opt!(&cpu_graph.appearance.background_color).map(
+                        |background_color| {
+                            ("Background".to_owned(), background_color.clone())
+                        },
+                    ),
+                    get_opt!(&cpu_graph.appearance.mode).map(|mode| {
+                        ("Mode".to_owned(), mode.discrim().to_string())
+                    }),
+                    get_opt!(&cpu_graph.appearance.show_current_usage_bar).map(
+                        |show_current_usage_bar| {
+                            (
+                                "Bars".to_owned(),
+                                if *show_current_usage_bar { "1" } else { "0" }
+                                    .to_owned(),
+                            )
+                        },
+                    ),
+                    get_opt!(&cpu_graph.appearance.bars_color).map(
+                        |bars_color| {
+                            ("BarsColor".to_owned(), bars_color.clone())
+                        },
+                    ),
+                    get_opt!(&cpu_graph.appearance.show_frame).map(
+                        |show_frame| {
+                            (
+                                "Frame".to_owned(),
+                                if *show_frame { "1" } else { "0" }.to_owned(),
+                            )
+                        },
+                    ),
+                    get_opt!(&cpu_graph.appearance.show_border).map(
+                        |show_border| {
+                            (
+                                "Border".to_owned(),
+                                if *show_border { "1" } else { "0" }.to_owned(),
+                            )
+                        },
+                    ),
+                    get_opt!(&cpu_graph.advanced.update_interval).map(
+                        |update_interval| {
+                            (
+                                "UpdateInterval".to_owned(),
+                                update_interval.discrim().to_string(),
+                            )
+                        },
+                    ),
+                    get_opt!(&cpu_graph.advanced.tracked_core).map(
+                        |tracked_core| {
+                            ("TrackedCore".to_owned(), tracked_core.to_string())
+                        },
+                    ),
+                    get_opt!(&cpu_graph.advanced.width)
+                        .map(|width| ("Size".to_owned(), width.to_string())),
+                    get_opt!(&cpu_graph.advanced.threshold).map(|threshold| {
+                        ("LoadThreshold".to_owned(), threshold.to_string())
+                    }),
+                    get_opt!(&cpu_graph.advanced.associated_command).map(
+                        |associated_command| {
+                            (
+                                "Command".to_owned(),
+                                associated_command.to_string(),
+                            )
+                        },
+                    ),
+                    get_opt!(&cpu_graph.advanced.run_in_terminal).map(
+                        |run_in_terminal| {
+                            (
+                                "InTerminal".to_owned(),
+                                if *run_in_terminal { "1" } else { "0" }
+                                    .to_owned(),
+                            )
+                        },
+                    ),
+                    get_opt!(&cpu_graph.advanced.use_startup_notification).map(
+                        |use_startup_notification| {
+                            (
+                                "StartupNotification".to_owned(),
+                                if *use_startup_notification {
+                                    "1"
+                                } else {
+                                    "0"
+                                }
+                                .to_owned(),
+                            )
+                        },
+                    ),
+                    get_opt!(&cpu_graph.advanced.non_linear_time_scale).map(
+                        |non_linear_time_scale| {
+                            (
+                                "TimeScale".to_owned(),
+                                if *non_linear_time_scale { "1" } else { "0" }
+                                    .to_owned(),
+                            )
+                        },
+                    ),
+                    get_opt!(&cpu_graph.advanced.per_core_history_graphs).map(
+                        |per_core_history_graphs| {
+                            (
+                                "PerCore".to_owned(),
+                                if *per_core_history_graphs {
+                                    "1"
+                                } else {
+                                    "0"
+                                }
+                                .to_owned(),
+                            )
+                        },
+                    ),
+                ]
+                .opt_vec(),
+                sections: Vec::new(),
+            },
+        })],
     )
 }
