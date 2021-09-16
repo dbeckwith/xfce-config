@@ -1,3 +1,6 @@
+use serde::de;
+use std::fmt;
+
 config_types_proc_macro::config_types! {
     panels: [{
         display: {
@@ -240,6 +243,75 @@ config_types_proc_macro::config_types! {
     }];
 }
 
-// TODO: more flexible deserialize for colors
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug)]
 pub struct Color(pub u8, pub u8, pub u8);
+
+impl<'de> de::Deserialize<'de> for Color {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = Color;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "color")
+            }
+
+            fn visit_str<E>(self, mut v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                v = v.strip_prefix('#').unwrap_or(v);
+                if v.len() == 6 {
+                    let r =
+                        u8::from_str_radix(&v[0..2], 16).map_err(E::custom)?;
+                    let g =
+                        u8::from_str_radix(&v[2..4], 16).map_err(E::custom)?;
+                    let b =
+                        u8::from_str_radix(&v[4..6], 16).map_err(E::custom)?;
+                    Ok(Color(r, g, b))
+                } else if v.len() == 3 {
+                    let r =
+                        u8::from_str_radix(&v[0..1], 16).map_err(E::custom)?;
+                    let g =
+                        u8::from_str_radix(&v[1..2], 16).map_err(E::custom)?;
+                    let b =
+                        u8::from_str_radix(&v[2..3], 16).map_err(E::custom)?;
+                    let r = r | (r << 4);
+                    let g = g | (g << 4);
+                    let b = b | (b << 4);
+                    Ok(Color(r, g, b))
+                } else {
+                    Err(E::custom("expected 3- or 6-character hex code"))
+                }
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let r = seq.next_element()?.ok_or_else(|| {
+                    de::Error::invalid_length(0, &"expected exactly 3 elements")
+                })?;
+                let g = seq.next_element()?.ok_or_else(|| {
+                    de::Error::invalid_length(1, &"expected exactly 3 elements")
+                })?;
+                let b = seq.next_element()?.ok_or_else(|| {
+                    de::Error::invalid_length(2, &"expected exactly 3 elements")
+                })?;
+                if seq.next_element::<de::IgnoredAny>()?.is_some() {
+                    return Err(de::Error::invalid_length(
+                        4,
+                        &"expected exactly 3 elements",
+                    ));
+                }
+                Ok(Color(r, g, b))
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
+}
