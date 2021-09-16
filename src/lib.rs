@@ -183,6 +183,7 @@ fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
         ConfigPanelItem::ApplicationsMenu(_) => "applicationsmenu",
         ConfigPanelItem::Clock(_) => "clock",
         ConfigPanelItem::CpuGraph(_) => "cpugraph",
+        ConfigPanelItem::DirectoryMenu(_) => "directorymenu",
         ConfigPanelItem::WhiskerMenu(_) => "whiskermenu",
     }
 }
@@ -208,6 +209,9 @@ fn plugin_props(
         ConfigPanelItem::Clock(clock) => plugin_clock_props(plugin_id, clock),
         ConfigPanelItem::CpuGraph(cpu_graph) => {
             plugin_cpu_graph_props(plugin_id, cpu_graph)
+        },
+        ConfigPanelItem::DirectoryMenu(directory_menu) => {
+            plugin_directory_menu_props(plugin_id, directory_menu)
         },
         ConfigPanelItem::WhiskerMenu(_) => todo!(),
     }
@@ -632,5 +636,70 @@ fn plugin_cpu_graph_props(
                 sections: Vec::new(),
             },
         })],
+    )
+}
+
+fn plugin_directory_menu_props(
+    _plugin_id: i32,
+    directory_menu: &ConfigPanelItemDirectoryMenu,
+) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+    (
+        [
+            get_opt!(&directory_menu.appearance.base_directory).map(
+                |base_directory| {
+                    Property::new(
+                        "base-directory",
+                        Value::string(base_directory.clone()),
+                    )
+                },
+            ),
+            get_opt!(&directory_menu.appearance.icon).map(|icon| {
+                Property::new("icon-name", Value::string(icon.clone()))
+            }),
+            get_opt!(&directory_menu.menu.show_open_folder).map(
+                |show_open_folder| {
+                    Property::new("open-folder", Value::bool(*show_open_folder))
+                },
+            ),
+            get_opt!(&directory_menu.menu.show_open_in_terminal).map(
+                |show_open_in_terminal| {
+                    Property::new(
+                        "open-in-terminal",
+                        Value::bool(*show_open_in_terminal),
+                    )
+                },
+            ),
+            get_opt!(&directory_menu.menu.show_new_folder).map(
+                |show_new_folder| {
+                    Property::new("new-folder", Value::bool(*show_new_folder))
+                },
+            ),
+            get_opt!(&directory_menu.menu.show_new_text_document).map(
+                |show_new_text_document| {
+                    Property::new(
+                        "new-document",
+                        Value::bool(*show_new_text_document),
+                    )
+                },
+            ),
+            get_opt!(&directory_menu.filtering.file_pattern).map(
+                |file_pattern| {
+                    Property::new(
+                        "file-pattern",
+                        Value::string(file_pattern.clone()),
+                    )
+                },
+            ),
+            get_opt!(&directory_menu.filtering.show_hidden_files).map(
+                |show_hidden_files| {
+                    Property::new(
+                        "hidden-files",
+                        Value::bool(*show_hidden_files),
+                    )
+                },
+            ),
+        ]
+        .opt_vec(),
+        Vec::new(),
     )
 }

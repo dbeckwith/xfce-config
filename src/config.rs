@@ -154,6 +154,23 @@ config_types_proc_macro::config_types! {
                 };
             }
             | {
+                r#type: "directory-menu";
+                appearance: {
+                    base_directory: str;
+                    icon: str;
+                };
+                menu: {
+                    show_open_folder: bool;
+                    show_open_in_terminal: bool;
+                    show_new_folder: bool;
+                    show_new_text_document: bool;
+                };
+                filtering: {
+                    file_pattern: str;
+                    show_hidden_files: bool;
+                };
+            }
+            | {
                 r#type: "whisker-menu";
                 appearance: {
                     panel_button: {
