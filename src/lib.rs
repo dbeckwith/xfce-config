@@ -6,13 +6,7 @@ pub mod channel;
 pub mod config;
 
 use self::{cfg::*, channel::*, config::*};
-use std::{
-    array,
-    convert::TryFrom,
-    ops::RangeFrom,
-    path::PathBuf,
-    time::SystemTime,
-};
+use std::{array, ops::RangeFrom, path::PathBuf, time::SystemTime};
 
 pub enum ConfigFile {
     Link(ConfigFileLink),
@@ -66,14 +60,11 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
     let panel_ids = RangeFrom { start: 0 };
     let plugin_ids = RangeFrom { start: 1 };
     let mut launcher_item_ids = RangeFrom {
-        start: i32::try_from(
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                * 10,
-        )
-        .unwrap(),
+        start: SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            * 10,
     };
     let channel = Channel::new(
         "xfce4-panel",
@@ -198,7 +189,7 @@ fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
 fn plugin_props(
     plugin_id: i32,
     plugin: &ConfigPanelItem,
-    launcher_item_ids: impl Iterator<Item = i32>,
+    launcher_item_ids: impl Iterator<Item = u64>,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
     match plugin {
         ConfigPanelItem::Launcher(launcher) => {
@@ -224,7 +215,7 @@ fn plugin_props(
 fn plugin_launcher_props(
     plugin_id: i32,
     launcher: &ConfigPanelItemLauncher,
-    item_ids: impl Iterator<Item = i32>,
+    item_ids: impl Iterator<Item = u64>,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
     let item_ids = item_ids
         .take(launcher.items.iter().flatten().count())
@@ -283,7 +274,7 @@ fn plugin_launcher_props(
 
 fn plugin_launcher_item(
     plugin_id: i32,
-    item_id: i32,
+    item_id: u64,
     item: &ConfigPanelItemLauncherItem,
 ) -> ConfigFile {
     let path =
