@@ -90,7 +90,10 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<PluginConfig>) {
                             .map(|(panel_id, panel)| {
                                 Property::new(
                                     format!("panel-{}", panel_id),
-                                    panel_props(panel, &mut plugin_ids),
+                                    Value::empty(panel_props(
+                                        panel,
+                                        &mut plugin_ids,
+                                    )),
                                 )
                             })
                             .collect(),
@@ -136,49 +139,43 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<PluginConfig>) {
 fn panel_props(
     panel: &ConfigPanel,
     plugin_ids: impl Iterator<Item = i32>,
-) -> Value<'static> {
-    Value::empty(
-        [
-            get_opt!(&panel.display.general.mode)
-                .map(|mode| Property::new("mode", Value::uint(mode.discrim()))),
-            get_opt!(&panel.display.general.locked).map(|locked| {
-                Property::new("position-locked", Value::bool(!*locked))
-            }),
-            get_opt!(&panel.display.general.auto_hide).map(|auto_hide| {
+) -> Vec<Property<'static>> {
+    [
+        get_opt!(&panel.display.general.mode)
+            .map(|mode| Property::new("mode", Value::uint(mode.discrim()))),
+        get_opt!(&panel.display.general.locked).map(|locked| {
+            Property::new("position-locked", Value::bool(!*locked))
+        }),
+        get_opt!(&panel.display.general.auto_hide).map(|auto_hide| {
+            Property::new("autohide-behavior", Value::uint(auto_hide.discrim()))
+        }),
+        get_opt!(&panel.display.general.reserve_border_space).map(
+            |reserve_border_space| {
                 Property::new(
-                    "autohide-behavior",
-                    Value::uint(auto_hide.discrim()),
+                    "disable-struts",
+                    Value::bool(!*reserve_border_space),
                 )
-            }),
-            get_opt!(&panel.display.general.reserve_border_space).map(
-                |reserve_border_space| {
-                    Property::new(
-                        "disable-struts",
-                        Value::bool(!*reserve_border_space),
-                    )
-                },
-            ),
-            get_opt!(&panel.display.measurements.row_size)
-                .map(|row_size| Property::new("size", Value::uint(*row_size))),
-            get_opt!(&panel.display.measurements.row_count).map(|row_count| {
-                Property::new("nrows", Value::uint(*row_count))
-            }),
-            get_opt!(&panel.display.measurements.length)
-                .map(|length| Property::new("length", Value::uint(*length))),
-            get_opt!(&panel.display.measurements.auto_size).map(|auto_size| {
-                Property::new("length-adjust", Value::bool(*auto_size))
-            }),
-            get_opt!(&panel.items).map(|items| {
-                Property::new(
-                    "plugin-ids",
-                    Value::array(
-                        plugin_ids.take(items.len()).map(Value::int).collect(),
-                    ),
-                )
-            }),
-        ]
-        .opt_vec(),
-    )
+            },
+        ),
+        get_opt!(&panel.display.measurements.row_size)
+            .map(|row_size| Property::new("size", Value::uint(*row_size))),
+        get_opt!(&panel.display.measurements.row_count)
+            .map(|row_count| Property::new("nrows", Value::uint(*row_count))),
+        get_opt!(&panel.display.measurements.length)
+            .map(|length| Property::new("length", Value::uint(*length))),
+        get_opt!(&panel.display.measurements.auto_size).map(|auto_size| {
+            Property::new("length-adjust", Value::bool(*auto_size))
+        }),
+        get_opt!(&panel.items).map(|items| {
+            Property::new(
+                "plugin-ids",
+                Value::array(
+                    plugin_ids.take(items.len()).map(Value::int).collect(),
+                ),
+            )
+        }),
+    ]
+    .opt_vec()
 }
 
 fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
