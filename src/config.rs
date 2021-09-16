@@ -178,12 +178,27 @@ config_types_proc_macro::config_types! {
                     urgent_limit: uint;
                 };
                 user_interface: {
-                    name: str;
                     show_name: bool;
+                    name: str;
                     show_size: bool;
                     show_meter: bool;
                     show_button: bool;
                 };
+            }
+            | {
+                r#type: "network-monitor";
+                show_label: bool;
+                label: str;
+                network_device: str;
+                update_interval_ms: uint;
+                show_values_as_bits: bool;
+                auto_max: bool;
+                max_in_bytes: uint;
+                max_out_bytes: uint;
+                style: ("bars" | "values" | "bars-and-values");
+                bar_color_in: color;
+                bar_color_out: color;
+                colorize_values: bool;
             }
             | {
                 r#type: "whisker-menu";

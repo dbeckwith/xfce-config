@@ -176,16 +176,18 @@ fn panel_props(
 }
 
 fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
+    use ConfigPanelItem::*;
     match plugin {
-        ConfigPanelItem::Launcher(_) => "launcher",
-        ConfigPanelItem::Separator(_) => "separator",
-        ConfigPanelItem::ActionButtons(_) => "actions",
-        ConfigPanelItem::ApplicationsMenu(_) => "applicationsmenu",
-        ConfigPanelItem::Clock(_) => "clock",
-        ConfigPanelItem::CpuGraph(_) => "cpugraph",
-        ConfigPanelItem::DirectoryMenu(_) => "directorymenu",
-        ConfigPanelItem::FreeSpaceChecker(_) => "fsguard",
-        ConfigPanelItem::WhiskerMenu(_) => "whiskermenu",
+        Launcher(_) => "launcher",
+        Separator(_) => "separator",
+        ActionButtons(_) => "actions",
+        ApplicationsMenu(_) => "applicationsmenu",
+        Clock(_) => "clock",
+        CpuGraph(_) => "cpugraph",
+        DirectoryMenu(_) => "directorymenu",
+        FreeSpaceChecker(_) => "fsguard",
+        NetworkMonitor(_) => "netload",
+        WhiskerMenu(_) => "whiskermenu",
     }
 }
 
@@ -194,30 +196,30 @@ fn plugin_props(
     plugin: &ConfigPanelItem,
     launcher_item_ids: impl Iterator<Item = u64>,
 ) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+    use ConfigPanelItem::*;
     match plugin {
-        ConfigPanelItem::Launcher(launcher) => {
+        Launcher(launcher) => {
             plugin_launcher_props(plugin_id, launcher, launcher_item_ids)
         },
-        ConfigPanelItem::Separator(separator) => {
-            plugin_separator_props(plugin_id, separator)
-        },
-        ConfigPanelItem::ActionButtons(action_buttons) => {
+        Separator(separator) => plugin_separator_props(plugin_id, separator),
+        ActionButtons(action_buttons) => {
             plugin_action_buttons_props(plugin_id, action_buttons)
         },
-        ConfigPanelItem::ApplicationsMenu(applications_menu) => {
+        ApplicationsMenu(applications_menu) => {
             plugin_applications_menu_props(plugin_id, applications_menu)
         },
-        ConfigPanelItem::Clock(clock) => plugin_clock_props(plugin_id, clock),
-        ConfigPanelItem::CpuGraph(cpu_graph) => {
-            plugin_cpu_graph_props(plugin_id, cpu_graph)
-        },
-        ConfigPanelItem::DirectoryMenu(directory_menu) => {
+        Clock(clock) => plugin_clock_props(plugin_id, clock),
+        CpuGraph(cpu_graph) => plugin_cpu_graph_props(plugin_id, cpu_graph),
+        DirectoryMenu(directory_menu) => {
             plugin_directory_menu_props(plugin_id, directory_menu)
         },
-        ConfigPanelItem::FreeSpaceChecker(free_space_checker) => {
+        FreeSpaceChecker(free_space_checker) => {
             plugin_free_space_checker_props(plugin_id, free_space_checker)
         },
-        ConfigPanelItem::WhiskerMenu(_) => todo!(),
+        NetworkMonitor(network_monitor) => {
+            plugin_network_monitor_props(plugin_id, network_monitor)
+        },
+        WhiskerMenu(_) => todo!(),
     }
 }
 
@@ -718,7 +720,7 @@ fn plugin_free_space_checker_props(
     (
         Vec::new(),
         vec![ConfigFile::File(ConfigFileFile {
-            path: PathBuf::from(format!("cpugraph-{}.rc", plugin_id)),
+            path: PathBuf::from(format!("fsguard-{}.rc", plugin_id)),
             contents: Cfg {
                 root_props: [
                     get_opt!(&free_space_checker.configuration.mount_point)
@@ -759,6 +761,112 @@ fn plugin_free_space_checker_props(
                         .map(|show_button| {
                             ("hide_button".to_owned(), fmt_bool(!show_button))
                         }),
+                ]
+                .opt_vec(),
+                sections: Vec::new(),
+            },
+        })],
+    )
+}
+
+fn plugin_network_monitor_props(
+    plugin_id: i32,
+    network_monitor: &ConfigPanelItemNetworkMonitor,
+) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+    fn fmt_bool(b: bool) -> String {
+        if b { "true" } else { "false" }.to_owned()
+    }
+    fn fmt_color(Color(r, g, b): &Color) -> String {
+        format!("rgb({},{},{})", r, g, b)
+    }
+    (
+        Vec::new(),
+        vec![ConfigFile::File(ConfigFileFile {
+            path: PathBuf::from(format!("netload-{}.rc", plugin_id)),
+            contents: Cfg {
+                root_props: [
+                    get_opt!(&network_monitor.show_label).map(|show_label| {
+                        ("Use_Label".to_owned(), fmt_bool(*show_label))
+                    }),
+                    get_opt!(&network_monitor.label)
+                        .map(|label| ("Text".to_owned(), label.clone())),
+                    get_opt!(&network_monitor.network_device).map(
+                        |network_device| {
+                            (
+                                "Network_Device".to_owned(),
+                                network_device.clone(),
+                            )
+                        },
+                    ),
+                    get_opt!(&network_monitor.update_interval_ms).map(
+                        |update_interval_ms| {
+                            (
+                                "Update_Interval".to_owned(),
+                                update_interval_ms.to_string(),
+                            )
+                        },
+                    ),
+                    get_opt!(&network_monitor.show_values_as_bits).map(
+                        |show_values_as_bits| {
+                            (
+                                "Values_As_Bits".to_owned(),
+                                fmt_bool(*show_values_as_bits),
+                            )
+                        },
+                    ),
+                    get_opt!(&network_monitor.auto_max).map(|auto_max| {
+                        ("Auto_Max".to_owned(), fmt_bool(*auto_max))
+                    }),
+                    get_opt!(&network_monitor.max_in_bytes).map(
+                        |max_in_bytes| {
+                            ("Max_In".to_owned(), max_in_bytes.to_string())
+                        },
+                    ),
+                    get_opt!(&network_monitor.max_out_bytes).map(
+                        |max_out_bytes| {
+                            ("Max_Out".to_owned(), max_out_bytes.to_string())
+                        },
+                    ),
+                    get_opt!(&network_monitor.style).map(|style| {
+                        use ConfigPanelItemNetworkMonitorStyle::*;
+                        (
+                            "Show_Bars".to_owned(),
+                            fmt_bool(match style {
+                                Bars => true,
+                                Values => false,
+                                BarsAndValues => true,
+                            }),
+                        )
+                    }),
+                    get_opt!(&network_monitor.style).map(|style| {
+                        use ConfigPanelItemNetworkMonitorStyle::*;
+                        (
+                            "Show_Values".to_owned(),
+                            fmt_bool(match style {
+                                Bars => false,
+                                Values => true,
+                                BarsAndValues => true,
+                            }),
+                        )
+                    }),
+                    get_opt!(&network_monitor.bar_color_in).map(
+                        |bar_color_in| {
+                            ("Color_In".to_owned(), fmt_color(bar_color_in))
+                        },
+                    ),
+                    get_opt!(&network_monitor.bar_color_out).map(
+                        |bar_color_out| {
+                            ("Color_Out".to_owned(), fmt_color(bar_color_out))
+                        },
+                    ),
+                    get_opt!(&network_monitor.colorize_values).map(
+                        |colorize_values| {
+                            (
+                                "Colorize_Values".to_owned(),
+                                fmt_bool(*colorize_values),
+                            )
+                        },
+                    ),
                 ]
                 .opt_vec(),
                 sections: Vec::new(),
