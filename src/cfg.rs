@@ -46,18 +46,22 @@ impl Cfg {
         where
             W: Write,
         {
-            write!(writer, "{}={}", key, value)?;
+            writeln!(writer, "{}={}", key, value)?;
             Ok(())
         }
 
         for (key, value) in &self.root_props {
             write_prop(&mut writer, key, value)?;
         }
+        if !self.root_props.is_empty() {
+            writeln!(&mut writer)?;
+        }
         for (section_name, props) in &self.sections {
-            write!(&mut writer, "[{}]", section_name)?;
+            writeln!(&mut writer, "[{}]", section_name)?;
             for (key, value) in props {
                 write_prop(&mut writer, key, value)?;
             }
+            writeln!(&mut writer)?;
         }
         Ok(())
     }
