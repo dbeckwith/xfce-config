@@ -240,4 +240,6 @@ config_types_proc_macro::config_types! {
     }];
 }
 
+// TODO: more flexible deserialize for colors
+#[derive(Debug, serde::Deserialize)]
 pub struct Color(pub u8, pub u8, pub u8);

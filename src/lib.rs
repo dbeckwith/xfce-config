@@ -15,8 +15,13 @@ use std::{
 };
 
 pub enum ConfigFile {
-    Link(PathBuf),
+    Link(ConfigFileLink),
     File(ConfigFileFile),
+}
+
+pub struct ConfigFileLink {
+    pub from: PathBuf,
+    pub to: PathBuf,
 }
 
 pub struct ConfigFileFile {
@@ -281,20 +286,22 @@ fn plugin_launcher_item(
     item_id: i32,
     item: &ConfigPanelItemLauncherItem,
 ) -> ConfigFile {
+    let path =
+        PathBuf::from(format!("launcher-{}/{}.desktop", plugin_id, item_id));
     match item {
         ConfigPanelItemLauncherItem::Str(s) => {
             // TODO: support URL items
-            ConfigFile::Link(PathBuf::from(s))
+            ConfigFile::Link(ConfigFileLink {
+                from: PathBuf::from(s),
+                to: path,
+            })
         },
         ConfigPanelItemLauncherItem::Struct(item) => {
             fn fmt_bool(b: bool) -> String {
                 if b { "true" } else { "false" }.to_owned()
             }
             ConfigFile::File(ConfigFileFile {
-                path: PathBuf::from(format!(
-                    "launcher-{}/{}.desktop",
-                    plugin_id, item_id
-                )),
+                path,
                 contents: Cfg {
                     root_props: Vec::new(),
                     sections: vec![(

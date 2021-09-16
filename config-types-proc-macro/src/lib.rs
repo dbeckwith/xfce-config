@@ -445,6 +445,7 @@ impl EmitTypeDecls for TypeStruct {
         }
         let name = path.join();
         let type_decl = parse_quote! {
+            #[derive(::std::fmt::Debug, ::serde::Deserialize)]
             pub struct #name {
                 #(#decl_fields,)*
             }
@@ -491,6 +492,7 @@ impl EmitTypeDecls for TypeEnum {
         }
         let name = path.join();
         let type_decl = parse_quote! {
+            #[derive(::std::fmt::Debug, ::serde::Deserialize)]
             pub enum #name {
                 #(#decl_variants,)*
             }

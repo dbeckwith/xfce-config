@@ -15,3 +15,5 @@ edition = "2018"
 anyhow = "1.0.43"
 config-types-proc-macro = { path = "./config-types-proc-macro" }
 quick-xml = "0.22.0"
+serde = { version = "1.0.130", features = ["derive"] }
+serde_json = "1.0.67"
