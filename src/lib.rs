@@ -8,19 +8,24 @@ pub mod config;
 use self::{cfg::*, channel::*, config::*};
 use std::{array, ops::RangeFrom, path::PathBuf, time::SystemTime};
 
+pub struct PluginConfig {
+    pub name: &'static str,
+    pub id: i32,
+    pub file: ConfigFile,
+}
+
 pub enum ConfigFile {
-    Link(ConfigFileLink),
-    File(ConfigFileFile),
+    Rc(cfg::Cfg),
+    DesktopDir(ConfigFileDesktopDir),
 }
 
-pub struct ConfigFileLink {
-    pub path: PathBuf,
-    pub link_from: PathBuf,
+pub struct ConfigFileDesktopDir {
+    pub files: Vec<(u64, ConfigDesktopFile)>,
 }
 
-pub struct ConfigFileFile {
-    pub path: PathBuf,
-    pub contents: cfg::Cfg,
+pub enum ConfigDesktopFile {
+    Cfg(cfg::Cfg),
+    Link(PathBuf),
 }
 
 trait OptVec<T> {
@@ -55,8 +60,8 @@ macro_rules! get_opt {
     };
 }
 
-pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
-    let mut config_files = Vec::new();
+pub fn convert(config: Config) -> (Channel<'static>, Vec<PluginConfig>) {
+    let mut configs = Vec::new();
     let panel_ids =
         RangeFrom { start: 0 }.take(config.panels.as_ref().map_or(0, Vec::len));
     let plugin_ids = RangeFrom { start: 1 };
@@ -100,20 +105,21 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
                             .flat_map(|panel| panel.items.iter().flatten()),
                     )
                     .map(|(plugin_id, plugin)| {
+                        let r#type = plugin_type(plugin);
+                        let (props, config_file) =
+                            plugin_props(plugin, &mut launcher_item_ids);
+                        if let Some(config_file) = config_file {
+                            configs.push(PluginConfig {
+                                name: r#type,
+                                id: plugin_id,
+                                file: config_file,
+                            });
+                        }
                         Property::new(
                             format!("plugin-{}", plugin_id),
                             Value::new(
-                                TypedValue::String(plugin_type(plugin).into()),
-                                {
-                                    let (props, plugin_config_files) =
-                                        plugin_props(
-                                            plugin_id,
-                                            plugin,
-                                            &mut launcher_item_ids,
-                                        );
-                                    config_files.extend(plugin_config_files);
-                                    props
-                                },
+                                TypedValue::String(r#type.into()),
+                                props,
                             ),
                         )
                     })
@@ -124,7 +130,7 @@ pub fn convert(config: Config) -> (Channel<'static>, Vec<ConfigFile>) {
         ]
         .opt_vec(),
     );
-    (channel, config_files)
+    (channel, configs)
 }
 
 fn panel_props(
@@ -164,7 +170,7 @@ fn panel_props(
             }),
             get_opt!(&panel.items).map(|items| {
                 Property::new(
-                    "plugin_ids",
+                    "plugin-ids",
                     Value::array(
                         plugin_ids.take(items.len()).map(Value::int).collect(),
                     ),
@@ -193,51 +199,43 @@ fn plugin_type(plugin: &ConfigPanelItem) -> &'static str {
     }
 }
 
-// TODO: better capture common patterns of config file names
-
 fn plugin_props(
-    plugin_id: i32,
     plugin: &ConfigPanelItem,
     launcher_item_ids: impl Iterator<Item = u64>,
-) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+) -> (Vec<Property<'static>>, Option<ConfigFile>) {
     use ConfigPanelItem::*;
     match plugin {
         Launcher(launcher) => {
-            plugin_launcher_props(plugin_id, launcher, launcher_item_ids)
+            plugin_launcher_props(launcher, launcher_item_ids)
         },
-        Separator(separator) => plugin_separator_props(plugin_id, separator),
+        Separator(separator) => plugin_separator_props(separator),
         ActionButtons(action_buttons) => {
-            plugin_action_buttons_props(plugin_id, action_buttons)
+            plugin_action_buttons_props(action_buttons)
         },
         ApplicationsMenu(applications_menu) => {
-            plugin_applications_menu_props(plugin_id, applications_menu)
+            plugin_applications_menu_props(applications_menu)
         },
-        Clock(clock) => plugin_clock_props(plugin_id, clock),
-        CpuGraph(cpu_graph) => plugin_cpu_graph_props(plugin_id, cpu_graph),
+        Clock(clock) => plugin_clock_props(clock),
+        CpuGraph(cpu_graph) => plugin_cpu_graph_props(cpu_graph),
         DirectoryMenu(directory_menu) => {
-            plugin_directory_menu_props(plugin_id, directory_menu)
+            plugin_directory_menu_props(directory_menu)
         },
         FreeSpaceChecker(free_space_checker) => {
-            plugin_free_space_checker_props(plugin_id, free_space_checker)
+            plugin_free_space_checker_props(free_space_checker)
         },
         NetworkMonitor(network_monitor) => {
-            plugin_network_monitor_props(plugin_id, network_monitor)
+            plugin_network_monitor_props(network_monitor)
         },
-        Pulseaudio(pulseaudio) => {
-            plugin_pulseaudio_props(plugin_id, pulseaudio)
-        },
-        Screenshot(screenshot) => {
-            plugin_screenshot_props(plugin_id, screenshot)
-        },
+        Pulseaudio(pulseaudio) => plugin_pulseaudio_props(pulseaudio),
+        Screenshot(screenshot) => plugin_screenshot_props(screenshot),
         WhiskerMenu(_) => todo!(),
     }
 }
 
 fn plugin_launcher_props(
-    plugin_id: i32,
     launcher: &ConfigPanelItemLauncher,
     item_ids: impl Iterator<Item = u64>,
-) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+) -> (Vec<Property<'static>>, Option<ConfigFile>) {
     let item_ids = item_ids
         .take(launcher.items.iter().flatten().count())
         .collect::<Vec<_>>();
@@ -283,83 +281,73 @@ fn plugin_launcher_props(
             }),
         ]
         .opt_vec(),
-        item_ids
-            .into_iter()
-            .zip(launcher.items.iter().flatten())
-            .map(|(item_id, item)| {
-                plugin_launcher_item(plugin_id, item_id, item)
+        get_opt!(&launcher.items).map(|items| {
+            ConfigFile::DesktopDir(ConfigFileDesktopDir {
+                files: item_ids
+                    .into_iter()
+                    .zip(items.iter().map(plugin_launcher_item))
+                    .collect(),
             })
-            .collect(),
+        }),
     )
 }
 
 fn plugin_launcher_item(
-    plugin_id: i32,
-    item_id: u64,
     item: &ConfigPanelItemLauncherItem,
-) -> ConfigFile {
-    let path =
-        PathBuf::from(format!("launcher-{}/{}.desktop", plugin_id, item_id));
+) -> ConfigDesktopFile {
     match item {
         ConfigPanelItemLauncherItem::Str(s) => {
             // TODO: support URL items
-            ConfigFile::Link(ConfigFileLink {
-                path,
-                link_from: PathBuf::from(s),
-            })
+            ConfigDesktopFile::Link(PathBuf::from(s))
         },
         ConfigPanelItemLauncherItem::Struct(item) => {
             fn fmt_bool(b: bool) -> String {
                 if b { "true" } else { "false" }.to_owned()
             }
-            ConfigFile::File(ConfigFileFile {
-                path,
-                contents: Cfg {
-                    root_props: Vec::new(),
-                    sections: vec![(
-                        "Desktop Entry".to_owned(),
-                        [
-                            Some(("Version".to_owned(), "1.0".to_owned())),
-                            Some(("Type".to_owned(), "Application".to_owned())),
-                            get_opt!(&item.name)
-                                .map(|name| ("Name".to_owned(), name.clone())),
-                            get_opt!(&item.comment).map(|comment| {
-                                ("Comment".to_owned(), comment.clone())
-                            }),
-                            get_opt!(&item.command).map(|command| {
-                                ("Exec".to_owned(), command.clone())
-                            }),
-                            get_opt!(&item.icon)
-                                .map(|icon| ("Icon".to_owned(), icon.clone())),
-                            get_opt!(&item.startup_notification).map(
-                                |startup_notification| {
-                                    (
-                                        "StartupNotify".to_owned(),
-                                        fmt_bool(*startup_notification),
-                                    )
-                                },
-                            ),
-                            get_opt!(&item.run_in_terminal).map(
-                                |run_in_terminal| {
-                                    (
-                                        "Terminal".to_owned(),
-                                        fmt_bool(*run_in_terminal),
-                                    )
-                                },
-                            ),
-                        ]
-                        .opt_vec(),
-                    )],
-                },
+            ConfigDesktopFile::Cfg(Cfg {
+                root_props: Vec::new(),
+                sections: vec![(
+                    "Desktop Entry".to_owned(),
+                    [
+                        Some(("Version".to_owned(), "1.0".to_owned())),
+                        Some(("Type".to_owned(), "Application".to_owned())),
+                        get_opt!(&item.name)
+                            .map(|name| ("Name".to_owned(), name.clone())),
+                        get_opt!(&item.comment).map(|comment| {
+                            ("Comment".to_owned(), comment.clone())
+                        }),
+                        get_opt!(&item.command).map(|command| {
+                            ("Exec".to_owned(), command.clone())
+                        }),
+                        get_opt!(&item.icon)
+                            .map(|icon| ("Icon".to_owned(), icon.clone())),
+                        get_opt!(&item.startup_notification).map(
+                            |startup_notification| {
+                                (
+                                    "StartupNotify".to_owned(),
+                                    fmt_bool(*startup_notification),
+                                )
+                            },
+                        ),
+                        get_opt!(&item.run_in_terminal).map(
+                            |run_in_terminal| {
+                                (
+                                    "Terminal".to_owned(),
+                                    fmt_bool(*run_in_terminal),
+                                )
+                            },
+                        ),
+                    ]
+                    .opt_vec(),
+                )],
             })
         },
     }
 }
 
 fn plugin_separator_props(
-    _plugin_id: i32,
     separator: &ConfigPanelItemSeparator,
-) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+) -> (Vec<Property<'static>>, Option<ConfigFile>) {
     (
         [
             get_opt!(&separator.style).map(|style| {
@@ -369,14 +357,13 @@ fn plugin_separator_props(
                 .map(|expand| Property::new("expand", Value::bool(*expand))),
         ]
         .opt_vec(),
-        Vec::new(),
+        None,
     )
 }
 
 fn plugin_action_buttons_props(
-    _plugin_id: i32,
     action_buttons: &ConfigPanelItemActionButtons,
-) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+) -> (Vec<Property<'static>>, Option<ConfigFile>) {
     (
         [
             get_opt!(&action_buttons.general.appearance).map(|appearance| {
@@ -428,14 +415,13 @@ fn plugin_action_buttons_props(
             ),
         ]
         .opt_vec(),
-        Vec::new(),
+        None,
     )
 }
 
 fn plugin_applications_menu_props(
-    _plugin_id: i32,
     applications_menu: &ConfigPanelItemApplicationsMenu,
-) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+) -> (Vec<Property<'static>>, Option<ConfigFile>) {
     (
         [
             get_opt!(&applications_menu.appearance.show_generic_names).map(
@@ -485,14 +471,13 @@ fn plugin_applications_menu_props(
             ),
         ]
         .opt_vec(),
-        Vec::new(),
+        None,
     )
 }
 
 fn plugin_clock_props(
-    _plugin_id: i32,
     clock: &ConfigPanelItemClock,
-) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+) -> (Vec<Property<'static>>, Option<ConfigFile>) {
     (
         [
             get_opt!(&clock.time_settings.timezone).map(|timezone| {
@@ -526,14 +511,13 @@ fn plugin_clock_props(
             }),
         ]
         .opt_vec(),
-        Vec::new(),
+        None,
     )
 }
 
 fn plugin_cpu_graph_props(
-    plugin_id: i32,
     cpu_graph: &ConfigPanelItemCpuGraph,
-) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+) -> (Vec<Property<'static>>, Option<ConfigFile>) {
     fn fmt_bool(b: bool) -> String {
         if b { "1" } else { "0" }.to_owned()
     }
@@ -542,123 +526,101 @@ fn plugin_cpu_graph_props(
     }
     (
         Vec::new(),
-        vec![ConfigFile::File(ConfigFileFile {
-            path: PathBuf::from(format!("cpugraph-{}.rc", plugin_id)),
-            contents: Cfg {
-                root_props: [
-                    get_opt!(&cpu_graph.appearance.color1).map(|color1| {
-                        ("Foreground1".to_owned(), fmt_color(color1))
-                    }),
-                    get_opt!(&cpu_graph.appearance.color2).map(|color2| {
-                        ("Foreground2".to_owned(), fmt_color(color2))
-                    }),
-                    get_opt!(&cpu_graph.appearance.color3).map(|color3| {
-                        ("Foreground3".to_owned(), fmt_color(color3))
-                    }),
-                    get_opt!(&cpu_graph.appearance.background_color).map(
-                        |background_color| {
-                            (
-                                "Background".to_owned(),
-                                fmt_color(background_color),
-                            )
-                        },
-                    ),
-                    get_opt!(&cpu_graph.appearance.mode).map(|mode| {
-                        ("Mode".to_owned(), mode.discrim().to_string())
-                    }),
-                    get_opt!(&cpu_graph.appearance.show_current_usage_bar).map(
-                        |show_current_usage_bar| {
-                            (
-                                "Bars".to_owned(),
-                                fmt_bool(*show_current_usage_bar),
-                            )
-                        },
-                    ),
-                    get_opt!(&cpu_graph.appearance.bars_color).map(
-                        |bars_color| {
-                            ("BarsColor".to_owned(), fmt_color(bars_color))
-                        },
-                    ),
-                    get_opt!(&cpu_graph.appearance.show_frame).map(
-                        |show_frame| {
-                            ("Frame".to_owned(), fmt_bool(*show_frame))
-                        },
-                    ),
-                    get_opt!(&cpu_graph.appearance.show_border).map(
-                        |show_border| {
-                            ("Border".to_owned(), fmt_bool(*show_border))
-                        },
-                    ),
-                    get_opt!(&cpu_graph.advanced.update_interval).map(
-                        |update_interval| {
-                            (
-                                "UpdateInterval".to_owned(),
-                                update_interval.discrim().to_string(),
-                            )
-                        },
-                    ),
-                    get_opt!(&cpu_graph.advanced.tracked_core).map(
-                        |tracked_core| {
-                            ("TrackedCore".to_owned(), tracked_core.to_string())
-                        },
-                    ),
-                    get_opt!(&cpu_graph.advanced.width)
-                        .map(|width| ("Size".to_owned(), width.to_string())),
-                    get_opt!(&cpu_graph.advanced.threshold).map(|threshold| {
-                        ("LoadThreshold".to_owned(), threshold.to_string())
-                    }),
-                    get_opt!(&cpu_graph.advanced.associated_command).map(
-                        |associated_command| {
-                            (
-                                "Command".to_owned(),
-                                associated_command.to_string(),
-                            )
-                        },
-                    ),
-                    get_opt!(&cpu_graph.advanced.run_in_terminal).map(
-                        |run_in_terminal| {
-                            (
-                                "InTerminal".to_owned(),
-                                fmt_bool(*run_in_terminal),
-                            )
-                        },
-                    ),
-                    get_opt!(&cpu_graph.advanced.use_startup_notification).map(
-                        |use_startup_notification| {
-                            (
-                                "StartupNotification".to_owned(),
-                                fmt_bool(*use_startup_notification),
-                            )
-                        },
-                    ),
-                    get_opt!(&cpu_graph.advanced.non_linear_time_scale).map(
-                        |non_linear_time_scale| {
-                            (
-                                "TimeScale".to_owned(),
-                                fmt_bool(*non_linear_time_scale),
-                            )
-                        },
-                    ),
-                    get_opt!(&cpu_graph.advanced.per_core_history_graphs).map(
-                        |per_core_history_graphs| {
-                            (
-                                "PerCore".to_owned(),
-                                fmt_bool(*per_core_history_graphs),
-                            )
-                        },
-                    ),
-                ]
-                .opt_vec(),
-                sections: Vec::new(),
-            },
-        })],
+        Some(ConfigFile::Rc(Cfg {
+            root_props: [
+                get_opt!(&cpu_graph.appearance.color1).map(|color1| {
+                    ("Foreground1".to_owned(), fmt_color(color1))
+                }),
+                get_opt!(&cpu_graph.appearance.color2).map(|color2| {
+                    ("Foreground2".to_owned(), fmt_color(color2))
+                }),
+                get_opt!(&cpu_graph.appearance.color3).map(|color3| {
+                    ("Foreground3".to_owned(), fmt_color(color3))
+                }),
+                get_opt!(&cpu_graph.appearance.background_color).map(
+                    |background_color| {
+                        ("Background".to_owned(), fmt_color(background_color))
+                    },
+                ),
+                get_opt!(&cpu_graph.appearance.mode).map(|mode| {
+                    ("Mode".to_owned(), mode.discrim().to_string())
+                }),
+                get_opt!(&cpu_graph.appearance.show_current_usage_bar).map(
+                    |show_current_usage_bar| {
+                        ("Bars".to_owned(), fmt_bool(*show_current_usage_bar))
+                    },
+                ),
+                get_opt!(&cpu_graph.appearance.bars_color).map(|bars_color| {
+                    ("BarsColor".to_owned(), fmt_color(bars_color))
+                }),
+                get_opt!(&cpu_graph.appearance.show_frame).map(|show_frame| {
+                    ("Frame".to_owned(), fmt_bool(*show_frame))
+                }),
+                get_opt!(&cpu_graph.appearance.show_border).map(
+                    |show_border| ("Border".to_owned(), fmt_bool(*show_border)),
+                ),
+                get_opt!(&cpu_graph.advanced.update_interval).map(
+                    |update_interval| {
+                        (
+                            "UpdateInterval".to_owned(),
+                            update_interval.discrim().to_string(),
+                        )
+                    },
+                ),
+                get_opt!(&cpu_graph.advanced.tracked_core).map(
+                    |tracked_core| {
+                        ("TrackedCore".to_owned(), tracked_core.to_string())
+                    },
+                ),
+                get_opt!(&cpu_graph.advanced.width)
+                    .map(|width| ("Size".to_owned(), width.to_string())),
+                get_opt!(&cpu_graph.advanced.threshold).map(|threshold| {
+                    ("LoadThreshold".to_owned(), threshold.to_string())
+                }),
+                get_opt!(&cpu_graph.advanced.associated_command).map(
+                    |associated_command| {
+                        ("Command".to_owned(), associated_command.to_string())
+                    },
+                ),
+                get_opt!(&cpu_graph.advanced.run_in_terminal).map(
+                    |run_in_terminal| {
+                        ("InTerminal".to_owned(), fmt_bool(*run_in_terminal))
+                    },
+                ),
+                get_opt!(&cpu_graph.advanced.use_startup_notification).map(
+                    |use_startup_notification| {
+                        (
+                            "StartupNotification".to_owned(),
+                            fmt_bool(*use_startup_notification),
+                        )
+                    },
+                ),
+                get_opt!(&cpu_graph.advanced.non_linear_time_scale).map(
+                    |non_linear_time_scale| {
+                        (
+                            "TimeScale".to_owned(),
+                            fmt_bool(*non_linear_time_scale),
+                        )
+                    },
+                ),
+                get_opt!(&cpu_graph.advanced.per_core_history_graphs).map(
+                    |per_core_history_graphs| {
+                        (
+                            "PerCore".to_owned(),
+                            fmt_bool(*per_core_history_graphs),
+                        )
+                    },
+                ),
+            ]
+            .opt_vec(),
+            sections: Vec::new(),
+        })),
     )
 }
 
 fn plugin_directory_menu_props(
-    _plugin_id: i32,
     directory_menu: &ConfigPanelItemDirectoryMenu,
-) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+) -> (Vec<Property<'static>>, Option<ConfigFile>) {
     (
         [
             get_opt!(&directory_menu.appearance.base_directory).map(
@@ -716,73 +678,65 @@ fn plugin_directory_menu_props(
             ),
         ]
         .opt_vec(),
-        Vec::new(),
+        None,
     )
 }
 
 fn plugin_free_space_checker_props(
-    plugin_id: i32,
     free_space_checker: &ConfigPanelItemFreeSpaceChecker,
-) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+) -> (Vec<Property<'static>>, Option<ConfigFile>) {
     fn fmt_bool(b: bool) -> String {
         if b { "true" } else { "false" }.to_owned()
     }
     (
         Vec::new(),
-        vec![ConfigFile::File(ConfigFileFile {
-            path: PathBuf::from(format!("fsguard-{}.rc", plugin_id)),
-            contents: Cfg {
-                root_props: [
-                    get_opt!(&free_space_checker.configuration.mount_point)
-                        .map(|mount_point| {
-                            ("mnt".to_owned(), mount_point.clone())
-                        }),
-                    get_opt!(&free_space_checker.configuration.warning_limit)
-                        .map(|warning_limit| {
-                            ("yellow".to_owned(), warning_limit.to_string())
-                        }),
-                    get_opt!(&free_space_checker.configuration.urgent_limit)
-                        .map(|urgent_limit| {
-                            ("red".to_owned(), urgent_limit.to_string())
-                        }),
-                    get_opt!(&free_space_checker.user_interface.name)
-                        .map(|name| ("label".to_owned(), name.clone())),
-                    get_opt!(&free_space_checker.user_interface.show_name).map(
-                        |show_name| {
-                            ("label_visible".to_owned(), fmt_bool(*show_name))
-                        },
-                    ),
-                    get_opt!(&free_space_checker.user_interface.show_size).map(
-                        |show_size| {
-                            (
-                                "lab_size_visible".to_owned(),
-                                fmt_bool(*show_size),
-                            )
-                        },
-                    ),
-                    get_opt!(&free_space_checker.user_interface.show_meter)
-                        .map(|show_meter| {
-                            (
-                                "progress_var_visible".to_owned(),
-                                fmt_bool(*show_meter),
-                            )
-                        }),
-                    get_opt!(&free_space_checker.user_interface.show_button)
-                        .map(|show_button| {
-                            ("hide_button".to_owned(), fmt_bool(!show_button))
-                        }),
-                ]
-                .opt_vec(),
-                sections: Vec::new(),
-            },
-        })],
+        Some(ConfigFile::Rc(Cfg {
+            root_props: [
+                get_opt!(&free_space_checker.configuration.mount_point)
+                    .map(|mount_point| ("mnt".to_owned(), mount_point.clone())),
+                get_opt!(&free_space_checker.configuration.warning_limit).map(
+                    |warning_limit| {
+                        ("yellow".to_owned(), warning_limit.to_string())
+                    },
+                ),
+                get_opt!(&free_space_checker.configuration.urgent_limit).map(
+                    |urgent_limit| ("red".to_owned(), urgent_limit.to_string()),
+                ),
+                get_opt!(&free_space_checker.user_interface.name)
+                    .map(|name| ("label".to_owned(), name.clone())),
+                get_opt!(&free_space_checker.user_interface.show_name).map(
+                    |show_name| {
+                        ("label_visible".to_owned(), fmt_bool(*show_name))
+                    },
+                ),
+                get_opt!(&free_space_checker.user_interface.show_size).map(
+                    |show_size| {
+                        ("lab_size_visible".to_owned(), fmt_bool(*show_size))
+                    },
+                ),
+                get_opt!(&free_space_checker.user_interface.show_meter).map(
+                    |show_meter| {
+                        (
+                            "progress_var_visible".to_owned(),
+                            fmt_bool(*show_meter),
+                        )
+                    },
+                ),
+                get_opt!(&free_space_checker.user_interface.show_button).map(
+                    |show_button| {
+                        ("hide_button".to_owned(), fmt_bool(!show_button))
+                    },
+                ),
+            ]
+            .opt_vec(),
+            sections: Vec::new(),
+        })),
     )
 }
 
 fn plugin_network_monitor_props(
-    plugin_id: i32,
     network_monitor: &ConfigPanelItemNetworkMonitor,
-) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+) -> (Vec<Property<'static>>, Option<ConfigFile>) {
     fn fmt_bool(b: bool) -> String {
         if b { "true" } else { "false" }.to_owned()
     }
@@ -791,104 +745,89 @@ fn plugin_network_monitor_props(
     }
     (
         Vec::new(),
-        vec![ConfigFile::File(ConfigFileFile {
-            path: PathBuf::from(format!("netload-{}.rc", plugin_id)),
-            contents: Cfg {
-                root_props: [
-                    get_opt!(&network_monitor.show_label).map(|show_label| {
-                        ("Use_Label".to_owned(), fmt_bool(*show_label))
-                    }),
-                    get_opt!(&network_monitor.label)
-                        .map(|label| ("Text".to_owned(), label.clone())),
-                    get_opt!(&network_monitor.network_device).map(
-                        |network_device| {
-                            (
-                                "Network_Device".to_owned(),
-                                network_device.clone(),
-                            )
-                        },
-                    ),
-                    get_opt!(&network_monitor.update_interval_ms).map(
-                        |update_interval_ms| {
-                            (
-                                "Update_Interval".to_owned(),
-                                update_interval_ms.to_string(),
-                            )
-                        },
-                    ),
-                    get_opt!(&network_monitor.show_values_as_bits).map(
-                        |show_values_as_bits| {
-                            (
-                                "Values_As_Bits".to_owned(),
-                                fmt_bool(*show_values_as_bits),
-                            )
-                        },
-                    ),
-                    get_opt!(&network_monitor.auto_max).map(|auto_max| {
-                        ("Auto_Max".to_owned(), fmt_bool(*auto_max))
-                    }),
-                    get_opt!(&network_monitor.max_in_bytes).map(
-                        |max_in_bytes| {
-                            ("Max_In".to_owned(), max_in_bytes.to_string())
-                        },
-                    ),
-                    get_opt!(&network_monitor.max_out_bytes).map(
-                        |max_out_bytes| {
-                            ("Max_Out".to_owned(), max_out_bytes.to_string())
-                        },
-                    ),
-                    get_opt!(&network_monitor.style).map(|style| {
-                        use ConfigPanelItemNetworkMonitorStyle::*;
+        Some(ConfigFile::Rc(Cfg {
+            root_props: [
+                get_opt!(&network_monitor.show_label).map(|show_label| {
+                    ("Use_Label".to_owned(), fmt_bool(*show_label))
+                }),
+                get_opt!(&network_monitor.label)
+                    .map(|label| ("Text".to_owned(), label.clone())),
+                get_opt!(&network_monitor.network_device).map(
+                    |network_device| {
+                        ("Network_Device".to_owned(), network_device.clone())
+                    },
+                ),
+                get_opt!(&network_monitor.update_interval_ms).map(
+                    |update_interval_ms| {
                         (
-                            "Show_Bars".to_owned(),
-                            fmt_bool(match style {
-                                Bars => true,
-                                Values => false,
-                                BarsAndValues => true,
-                            }),
+                            "Update_Interval".to_owned(),
+                            update_interval_ms.to_string(),
                         )
-                    }),
-                    get_opt!(&network_monitor.style).map(|style| {
-                        use ConfigPanelItemNetworkMonitorStyle::*;
+                    },
+                ),
+                get_opt!(&network_monitor.show_values_as_bits).map(
+                    |show_values_as_bits| {
                         (
-                            "Show_Values".to_owned(),
-                            fmt_bool(match style {
-                                Bars => false,
-                                Values => true,
-                                BarsAndValues => true,
-                            }),
+                            "Values_As_Bits".to_owned(),
+                            fmt_bool(*show_values_as_bits),
                         )
-                    }),
-                    get_opt!(&network_monitor.bar_color_in).map(
-                        |bar_color_in| {
-                            ("Color_In".to_owned(), fmt_color(bar_color_in))
-                        },
-                    ),
-                    get_opt!(&network_monitor.bar_color_out).map(
-                        |bar_color_out| {
-                            ("Color_Out".to_owned(), fmt_color(bar_color_out))
-                        },
-                    ),
-                    get_opt!(&network_monitor.colorize_values).map(
-                        |colorize_values| {
-                            (
-                                "Colorize_Values".to_owned(),
-                                fmt_bool(*colorize_values),
-                            )
-                        },
-                    ),
-                ]
-                .opt_vec(),
-                sections: Vec::new(),
-            },
-        })],
+                    },
+                ),
+                get_opt!(&network_monitor.auto_max).map(|auto_max| {
+                    ("Auto_Max".to_owned(), fmt_bool(*auto_max))
+                }),
+                get_opt!(&network_monitor.max_in_bytes).map(|max_in_bytes| {
+                    ("Max_In".to_owned(), max_in_bytes.to_string())
+                }),
+                get_opt!(&network_monitor.max_out_bytes).map(|max_out_bytes| {
+                    ("Max_Out".to_owned(), max_out_bytes.to_string())
+                }),
+                get_opt!(&network_monitor.style).map(|style| {
+                    use ConfigPanelItemNetworkMonitorStyle::*;
+                    (
+                        "Show_Bars".to_owned(),
+                        fmt_bool(match style {
+                            Bars => true,
+                            Values => false,
+                            BarsAndValues => true,
+                        }),
+                    )
+                }),
+                get_opt!(&network_monitor.style).map(|style| {
+                    use ConfigPanelItemNetworkMonitorStyle::*;
+                    (
+                        "Show_Values".to_owned(),
+                        fmt_bool(match style {
+                            Bars => false,
+                            Values => true,
+                            BarsAndValues => true,
+                        }),
+                    )
+                }),
+                get_opt!(&network_monitor.bar_color_in).map(|bar_color_in| {
+                    ("Color_In".to_owned(), fmt_color(bar_color_in))
+                }),
+                get_opt!(&network_monitor.bar_color_out).map(|bar_color_out| {
+                    ("Color_Out".to_owned(), fmt_color(bar_color_out))
+                }),
+                get_opt!(&network_monitor.colorize_values).map(
+                    |colorize_values| {
+                        (
+                            "Colorize_Values".to_owned(),
+                            fmt_bool(*colorize_values),
+                        )
+                    },
+                ),
+            ]
+            .opt_vec(),
+            sections: Vec::new(),
+        })),
     )
 }
 
 fn plugin_pulseaudio_props(
-    _plugin_id: i32,
     pulseaudio: &ConfigPanelItemPulseaudio,
-) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+) -> (Vec<Property<'static>>, Option<ConfigFile>) {
     (
         [
             get_opt!(&pulseaudio.volume_keyboard_shortcuts).map(
@@ -931,43 +870,35 @@ fn plugin_pulseaudio_props(
             ),
         ]
         .opt_vec(),
-        Vec::new(),
+        None,
     )
 }
 
 fn plugin_screenshot_props(
-    plugin_id: i32,
     screenshot: &ConfigPanelItemScreenshot,
-) -> (Vec<Property<'static>>, Vec<ConfigFile>) {
+) -> (Vec<Property<'static>>, Option<ConfigFile>) {
     fn fmt_bool(b: bool) -> String {
         if b { "1" } else { "0" }.to_owned()
     }
     (
         Vec::new(),
-        vec![ConfigFile::File(ConfigFileFile {
-            path: PathBuf::from(format!("screenshooter-{}.rc", plugin_id)),
-            contents: Cfg {
-                root_props: [
-                    get_opt!(&screenshot.capture_region).map(
-                        |capture_region| {
-                            (
-                                "region".to_owned(),
-                                (capture_region.discrim() + 1).to_string(),
-                            )
-                        },
-                    ),
-                    get_opt!(&screenshot.capture_cursor).map(
-                        |capture_cursor| {
-                            ("show_mouse".to_owned(), fmt_bool(*capture_cursor))
-                        },
-                    ),
-                    get_opt!(&screenshot.capture_delay).map(|capture_delay| {
-                        ("delay".to_owned(), capture_delay.to_string())
-                    }),
-                ]
-                .opt_vec(),
-                sections: Vec::new(),
-            },
-        })],
+        Some(ConfigFile::Rc(Cfg {
+            root_props: [
+                get_opt!(&screenshot.capture_region).map(|capture_region| {
+                    (
+                        "region".to_owned(),
+                        (capture_region.discrim() + 1).to_string(),
+                    )
+                }),
+                get_opt!(&screenshot.capture_cursor).map(|capture_cursor| {
+                    ("show_mouse".to_owned(), fmt_bool(*capture_cursor))
+                }),
+                get_opt!(&screenshot.capture_delay).map(|capture_delay| {
+                    ("delay".to_owned(), capture_delay.to_string())
+                }),
+            ]
+            .opt_vec(),
+            sections: Vec::new(),
+        })),
     )
 }
