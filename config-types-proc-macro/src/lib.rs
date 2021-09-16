@@ -15,6 +15,7 @@ use syn::{
     punctuated::Punctuated,
     token::{Brace, Bracket, Paren},
     Arm,
+    Attribute,
     Error,
     Ident,
     Item,
@@ -152,6 +153,7 @@ struct TypeStruct {
 
 #[derive(Debug)]
 struct Field {
+    attrs: Vec<Attribute>,
     name: Ident,
     colon_token: Token![:],
     ty: Type,
@@ -247,10 +249,12 @@ impl Parse for TypeStruct {
 
 impl Parse for Field {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let attrs = Attribute::parse_outer(input)?;
         let name = input.parse()?;
         let colon_token = input.parse()?;
         let ty = input.parse()?;
         Ok(Self {
+            attrs,
             name,
             colon_token,
             ty,
@@ -406,6 +410,7 @@ impl EmitTypeDecls for TypeStruct {
         } = self;
         let mut decl_fields = Vec::<syn::Field>::new();
         for Field {
+            attrs,
             name,
             colon_token: _,
             ty,
@@ -440,6 +445,7 @@ impl EmitTypeDecls for TypeStruct {
             ty.emit_type_decls(path, type_decls)?;
             let field = syn::Field::parse_named
                 .parse2(quote! {
+                    #(#attrs)*
                     #[serde(default)]
                     pub #name: Option<#ty_name>
                 })
@@ -622,6 +628,7 @@ fn emit_enum_struct(
         }
         let variant_name_lit_str = {
             let Field {
+                attrs: _,
                 name,
                 colon_token: _,
                 ty,

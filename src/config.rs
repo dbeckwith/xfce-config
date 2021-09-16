@@ -138,7 +138,7 @@ config_types_proc_macro::config_types! {
                         | "slowest"
                     );
                     // TODO: better way to represent tracked_core?
-                    // 0 for all, number for specific
+                    /// `0` will track all cores, `n` will track the nth core
                     tracked_core: uint;
                     width: uint;
                     threshold: uint;
