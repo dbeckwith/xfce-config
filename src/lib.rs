@@ -41,7 +41,7 @@ pub struct DesktopDir<'a> {
 
 #[derive(Debug, Deserialize)]
 pub struct DesktopFile<'a> {
-    pub id: u32,
+    pub id: u64,
     pub content: DesktopFileContent<'a>,
 }
 
@@ -59,7 +59,7 @@ pub struct DesktopFileLink<'a> {
 
 #[derive(Debug, Deserialize)]
 pub struct ConfigFilePlugin<'a> {
-    pub id: u32,
+    pub id: u64,
     pub r#type: Cow<'a, str>,
 }
 
@@ -79,12 +79,12 @@ impl XfceConfig<'static> {
 
         let channels = channels_dir
             .read_dir()
-            .context("error listing channels dir")?
+            .context("error reading channels dir")?
             .map(|entry| {
                 let entry = entry.context("error reading dir entry")?;
                 let path = entry.path();
-                let file =
-                    fs::File::open(path).context("error opening file")?;
+                let file = fs::File::open(path)
+                    .context("error opening channel XML file")?;
                 let reader = io::BufReader::new(file);
                 let channel = Channel::read_xml(reader)
                     .context("error reading channel XML")?;
@@ -93,8 +93,94 @@ impl XfceConfig<'static> {
             .collect::<Result<Vec<_>>>()
             .context("error loading channels data")?;
 
-        // TODO: read config files
-        let config_files = Vec::new();
+        let config_files = panel_plugins_dir
+            .read_dir()
+            .context("error reading panel plugins dir")?
+            .map(|entry| {
+                let entry = entry.context("error reading dir entry")?;
+                let metadata = entry.metadata().context(
+                    "error getting metadata for panel plugin dir entry",
+                )?;
+                let path = entry.path();
+
+                let plugin = (|| {
+                    let file_name = path.file_stem()?;
+                    let file_name = file_name.to_str()?;
+                    let (r#type, id) = file_name.rsplit_once('-')?;
+                    let id = id.parse().ok()?;
+                    let r#type = r#type.to_owned().into();
+                    Some(ConfigFilePlugin { id, r#type })
+                })();
+                let plugin = if let Some(plugin) = plugin {
+                    plugin
+                } else {
+                    return Ok(None);
+                };
+
+                let file = if metadata.is_dir() {
+                    let files = path
+                        .read_dir()
+                        .context("error reading desktop dir")?
+                        .map(|entry| {
+                            let entry =
+                                entry.context("error reading dir entry")?;
+                            let metadata = entry.metadata().context(
+                                "error getting metadata for desktop dir entry",
+                            )?;
+                            let path = entry.path();
+
+                            let id = (|| {
+                                let file_name = entry.file_name();
+                                let file_name = file_name.to_str()?;
+                                let (id, ext) = file_name.split_once('.')?;
+                                if ext != "desktop" {
+                                    return None;
+                                }
+                                let id = id.parse().ok()?;
+                                Some(id)
+                            })();
+                            let id = if let Some(id) = id {
+                                id
+                            } else {
+                                return Ok(None);
+                            };
+
+                            let content = if metadata.file_type().is_symlink() {
+                                let path = path
+                                    .read_link()
+                                    .context("error reading desktop link")?;
+                                DesktopFileContent::Link(DesktopFileLink {
+                                    path: path.into(),
+                                })
+                            } else {
+                                let file = fs::File::open(path)
+                                    .context("error opening desktop file")?;
+                                let reader = io::BufReader::new(file);
+                                let cfg = Cfg::read(reader)
+                                    .context("error reading desktop file")?;
+                                DesktopFileContent::Cfg(cfg)
+                            };
+
+                            Ok(Some(DesktopFile { id, content }))
+                        })
+                        .filter_map(Result::transpose)
+                        .collect::<Result<Vec<_>>>()
+                        .context("error loading desktop files")?;
+                    ConfigFileFile::DesktopDir(DesktopDir { files })
+                } else {
+                    let file = fs::File::open(path)
+                        .context("error opening plugin rc file")?;
+                    let reader = io::BufReader::new(file);
+                    let cfg =
+                        Cfg::read(reader).context("error reading plugin rc")?;
+                    ConfigFileFile::Rc(cfg)
+                };
+
+                Ok(Some(ConfigFile { file, plugin }))
+            })
+            .filter_map(Result::transpose)
+            .collect::<Result<Vec<_>>>()
+            .context("error loading panel plugins data")?;
 
         Ok(Self {
             channels,
