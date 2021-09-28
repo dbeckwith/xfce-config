@@ -8,7 +8,9 @@ use std::{
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Cfg<'a> {
+    #[serde(default)]
     pub root: HashMap<Cow<'a, str>, Cow<'a, str>>,
+    #[serde(default)]
     pub sections: HashMap<Cow<'a, str>, HashMap<Cow<'a, str>, Cow<'a, str>>>,
 }
 

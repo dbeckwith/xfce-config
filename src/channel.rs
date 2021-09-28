@@ -15,6 +15,7 @@ use std::{
 pub struct Channel<'a> {
     pub name: Cow<'a, str>,
     pub version: Cow<'a, str>,
+    #[serde(default)]
     pub props: Vec<Property<'a>>,
 }
 
@@ -22,17 +23,21 @@ pub struct Channel<'a> {
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Property<'a> {
     pub name: Cow<'a, str>,
+    #[serde(flatten)]
     pub value: Value<'a>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Value<'a> {
+    #[serde(flatten)]
     pub value: TypedValue<'a>,
+    #[serde(default)]
     pub props: Vec<Property<'a>>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(tag = "type", content = "value", rename_all = "kebab-case")]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum TypedValue<'a> {
     Bool(bool),
@@ -690,6 +695,43 @@ mod tests {
     </property>
 </channel>
 "#
+        );
+    }
+
+    #[test]
+    fn deserialize() {
+        let prop: Property<'static> = serde_json::from_str(
+            r#"
+            {
+                "name": "foo",
+                "props": [
+                    {
+                        "name": "foo",
+                        "type": "uint",
+                        "value": 42
+                    }
+                ],
+                "type": "string",
+                "value": "bar"
+            }
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            prop,
+            Property {
+                name: "foo".into(),
+                value: Value {
+                    value: TypedValue::String("bar".into()),
+                    props: vec![Property {
+                        name: "foo".into(),
+                        value: Value {
+                            value: TypedValue::Uint(42),
+                            props: vec![],
+                        },
+                    }],
+                },
+            }
         );
     }
 }

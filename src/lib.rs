@@ -9,6 +9,7 @@ use serde::Deserialize;
 use std::{borrow::Cow, path::Path};
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct XfceConfig<'a> {
     pub channels: Vec<Channel<'a>>,
     pub config_files: Vec<ConfigFile<'a>>,
@@ -21,6 +22,7 @@ pub struct ConfigFile<'a> {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ConfigFileFile<'a> {
     Rc(Cfg<'a>),
     DesktopDir(DesktopDir<'a>),
@@ -38,9 +40,15 @@ pub struct DesktopFile<'a> {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
 pub enum DesktopFileContent<'a> {
     Cfg(Cfg<'a>),
-    Link(Cow<'a, Path>),
+    Link(DesktopFileLink<'a>),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DesktopFileLink<'a> {
+    pub path: Cow<'a, Path>,
 }
 
 #[derive(Debug, Deserialize)]
