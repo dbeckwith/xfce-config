@@ -4,12 +4,13 @@ use quick_xml::{
     Reader,
     Writer,
 };
+use serde::Deserialize;
 use std::{
     borrow::Cow,
     io::{BufRead, Write},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Channel<'a> {
     pub name: Cow<'a, str>,
@@ -17,21 +18,21 @@ pub struct Channel<'a> {
     pub props: Vec<Property<'a>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Property<'a> {
     pub name: Cow<'a, str>,
     pub value: Value<'a>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Value<'a> {
     pub value: TypedValue<'a>,
     pub props: Vec<Property<'a>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum TypedValue<'a> {
     Bool(bool),

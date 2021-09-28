@@ -2,9 +2,10 @@
 #![deny(clippy::correctness)]
 
 use anyhow::{Context, Result};
+use xfce_config::XfceConfig;
 
 fn main() -> Result<()> {
-    let config = serde_json::from_reader(std::io::stdin())
+    let config: XfceConfig<'static> = serde_json::from_reader(std::io::stdin())
         .context("error reading input JSON")?;
     dbg!(config);
     Ok(())
