@@ -17,5 +17,12 @@ fn main() -> Result<()> {
         .context("error reading config from environment")?;
     dbg!(&existing_config);
 
+    let merged_config = {
+        let mut new_config = new_config;
+        new_config.merge(existing_config);
+        new_config
+    };
+    dbg!(&merged_config);
+
     Ok(())
 }

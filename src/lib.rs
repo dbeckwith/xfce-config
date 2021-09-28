@@ -9,6 +9,7 @@ use self::channel::Channel;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::{
+    collections::HashMap,
     fs,
     io::{self, Read},
     path::Path,
@@ -19,6 +20,29 @@ use std::{
 pub struct XfceConfig<'a> {
     pub channels: Vec<Channel<'a>>,
     pub panel_plugin_configs: Vec<self::panel::PluginConfig<'a>>,
+}
+
+impl XfceConfig<'_> {
+    pub fn merge(&mut self, other: Self) {
+        let mut self_channels_by_name = self
+            .channels
+            .iter_mut()
+            .map(|channel| (channel.name.to_owned(), channel))
+            .collect::<HashMap<_, _>>();
+        let mut new_channels = Vec::new();
+        for other_channel in other.channels {
+            if let Some(self_channel) =
+                self_channels_by_name.get_mut(&*other_channel.name)
+            {
+                self_channel.merge(other_channel);
+            } else {
+                new_channels.push(other_channel);
+            }
+        }
+        self.channels.extend(new_channels);
+
+        // TODO: merge panel plugin configs
+    }
 }
 
 impl XfceConfig<'static> {
