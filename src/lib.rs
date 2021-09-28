@@ -71,11 +71,9 @@ impl XfceConfig<'static> {
         serde_json::from_reader(reader).map_err(Into::into)
     }
 
-    pub fn from_env() -> Result<Self> {
-        let config_dir =
-            dirs2::config_dir().context("could not get config dir")?;
-        let channels_dir = config_dir.join("xfce4/xfconf/xfce-perchannel-xml");
-        let panel_plugins_dir = config_dir.join("xfce4/panel");
+    pub fn from_env(xfce4_config_dir: &Path) -> Result<Self> {
+        let channels_dir = xfce4_config_dir.join("xfconf/xfce-perchannel-xml");
+        let panel_plugins_dir = xfce4_config_dir.join("panel");
 
         let channels = channels_dir
             .read_dir()
