@@ -12,6 +12,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0.43"
+dirs2 = "3.0.1"
 indexmap = { version = "1.7.0", features = ["serde"] }
 quick-xml = "0.22.0"
 serde = { version = "1.0.130", features = ["derive"] }
