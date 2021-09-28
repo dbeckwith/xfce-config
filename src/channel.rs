@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use indexmap::IndexMap;
 use quick_xml::{
     events::{attributes::Attribute, BytesDecl, BytesStart, Event},
     Reader,
@@ -16,16 +17,10 @@ pub struct Channel<'a> {
     pub name: Cow<'a, str>,
     pub version: Cow<'a, str>,
     #[serde(default)]
-    pub props: Vec<Property<'a>>,
+    pub props: Properties<'a>,
 }
 
-#[derive(Debug, Deserialize)]
-#[cfg_attr(test, derive(PartialEq))]
-pub struct Property<'a> {
-    pub name: Cow<'a, str>,
-    #[serde(flatten)]
-    pub value: Value<'a>,
-}
+pub type Properties<'a> = IndexMap<Cow<'a, str>, Value<'a>>;
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -33,7 +28,7 @@ pub struct Value<'a> {
     #[serde(flatten)]
     pub value: TypedValue<'a>,
     #[serde(default)]
-    pub props: Vec<Property<'a>>,
+    pub props: Properties<'a>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,7 +48,7 @@ impl<'a> Channel<'a> {
     pub fn new(
         name: impl Into<Cow<'a, str>>,
         version: impl Into<Cow<'a, str>>,
-        props: Vec<Property<'a>>,
+        props: Properties<'a>,
     ) -> Self {
         Self {
             name: name.into(),
@@ -63,84 +58,58 @@ impl<'a> Channel<'a> {
     }
 
     pub fn merge(&mut self, other: Self) {
-        Property::merge_list(&mut self.props, other.props);
-    }
-}
-
-impl<'a> Property<'a> {
-    pub fn new(name: impl Into<Cow<'a, str>>, value: Value<'a>) -> Self {
-        Self {
-            name: name.into(),
-            value,
-        }
-    }
-
-    pub fn merge(&mut self, other: Self) {
-        self.value.merge(other.value);
-    }
-
-    fn merge_list(self_props: &mut Vec<Self>, other_props: Vec<Self>) {
-        for other_prop in other_props {
-            if let Some(self_prop) = self_props
-                .iter_mut()
-                .find(|self_prop| self_prop.name == other_prop.name)
-            {
-                self_prop.merge(other_prop);
-            } else {
-                self_props.push(other_prop);
-            }
-        }
+        merge_props(&mut self.props, other.props);
     }
 }
 
 impl<'a> Value<'a> {
-    pub fn new(value: TypedValue<'a>, props: Vec<Property<'a>>) -> Self {
+    pub fn new(value: TypedValue<'a>, props: Properties<'a>) -> Self {
         Self { value, props }
     }
 
     pub fn bool(b: bool) -> Self {
         Self {
             value: TypedValue::Bool(b),
-            props: Vec::new(),
+            props: Default::default(),
         }
     }
 
     pub fn int(n: i32) -> Self {
         Self {
             value: TypedValue::Int(n),
-            props: Vec::new(),
+            props: Default::default(),
         }
     }
 
     pub fn uint(n: u32) -> Self {
         Self {
             value: TypedValue::Uint(n),
-            props: Vec::new(),
+            props: Default::default(),
         }
     }
 
     pub fn double(f: f64) -> Self {
         Self {
             value: TypedValue::Double(f),
-            props: Vec::new(),
+            props: Default::default(),
         }
     }
 
     pub fn string(s: impl Into<Cow<'a, str>>) -> Self {
         Self {
             value: TypedValue::String(s.into()),
-            props: Vec::new(),
+            props: Default::default(),
         }
     }
 
     pub fn array(items: Vec<Value<'a>>) -> Self {
         Self {
             value: TypedValue::Array(items),
-            props: Vec::new(),
+            props: Default::default(),
         }
     }
 
-    pub fn empty(props: Vec<Property<'a>>) -> Self {
+    pub fn empty(props: Properties<'a>) -> Self {
         Self {
             value: TypedValue::Empty,
             props,
@@ -149,7 +118,24 @@ impl<'a> Value<'a> {
 
     pub fn merge(&mut self, other: Self) {
         // actual value doesn't change, just merge the props
-        Property::merge_list(&mut self.props, other.props);
+        merge_props(&mut self.props, other.props);
+    }
+}
+
+fn merge_props<'a>(
+    self_props: &mut Properties<'a>,
+    other_props: Properties<'a>,
+) {
+    for (other_name, other_value) in other_props {
+        use indexmap::map::Entry;
+        match self_props.entry(other_name) {
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().merge(other_value);
+            },
+            Entry::Vacant(entry) => {
+                entry.insert(other_value);
+            },
+        }
     }
 }
 
@@ -225,12 +211,12 @@ impl Channel<'_> {
             reader: &mut Reader<R>,
             buf: &mut Vec<u8>,
             parent_tag: &[u8],
-        ) -> Result<(Vec<Value<'static>>, Vec<Property<'static>>)>
+        ) -> Result<(Vec<Value<'static>>, Properties<'static>)>
         where
             R: BufRead,
         {
             let mut values = Vec::new();
-            let mut props = Vec::new();
+            let mut props = Properties::new();
             loop {
                 match reader.read_event(buf)? {
                     Event::Start(tag) => match tag.name() {
@@ -293,7 +279,9 @@ impl Channel<'_> {
                                 r#type,
                                 value,
                             )?;
-                            props.push(Property { name, value });
+                            if props.insert(name.clone(), value).is_some() {
+                                bail!("duplicate property {}", name);
+                            }
                         },
                         b"value" => {
                             let mut r#type = None::<Cow<'static, str>>;
@@ -526,13 +514,13 @@ impl Channel<'_> {
         }
 
         fn write_props<W>(
-            props: &[Property<'_>],
+            props: &Properties<'_>,
             writer: &mut Writer<W>,
         ) -> Result<()>
         where
             W: Write,
         {
-            for Property { name, value } in props {
+            for (name, value) in props {
                 let mut tag = BytesStart::borrowed_name(b"property");
                 tag.push_attribute(Attribute {
                     key: b"name",
@@ -587,6 +575,7 @@ impl Channel<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indexmap::indexmap;
 
     #[test]
     fn read_xml() {
@@ -607,37 +596,30 @@ mod tests {
             Channel {
                 name: "panel".into(),
                 version: "1.0".into(),
-                props: vec![
-                    Property {
-                        name: "foo".into(),
-                        value: Value {
-                            value: TypedValue::Array(vec![
-                                Value {
-                                    value: TypedValue::Bool(true),
-                                    props: vec![],
-                                },
-                                Value {
-                                    value: TypedValue::Bool(false),
-                                    props: vec![],
-                                },
-                            ]),
-                            props: vec![],
+                props: indexmap! {
+                    "foo".into() => Value {
+                        value: TypedValue::Array(vec![
+                            Value {
+                                value: TypedValue::Bool(true),
+                                props: Default::default(),
+                            },
+                            Value {
+                                value: TypedValue::Bool(false),
+                                props: Default::default(),
+                            },
+                        ]),
+                        props: Default::default(),
+                    },
+                    "bar".into() => Value {
+                        value: TypedValue::Empty,
+                        props: indexmap! {
+                            "baz".into() => Value {
+                                value: TypedValue::String("qux".into()),
+                                props: Default::default(),
+                            },
                         },
                     },
-                    Property {
-                        name: "bar".into(),
-                        value: Value {
-                            value: TypedValue::Empty,
-                            props: vec![Property {
-                                name: "baz".into(),
-                                value: Value {
-                                    value: TypedValue::String("qux".into()),
-                                    props: vec![],
-                                },
-                            }],
-                        },
-                    },
-                ],
+                },
             }
         );
     }
@@ -648,37 +630,30 @@ mod tests {
         let channel = Channel {
             name: "panel".into(),
             version: "1.0".into(),
-            props: vec![
-                Property {
-                    name: "foo".into(),
-                    value: Value {
-                        value: TypedValue::Array(vec![
-                            Value {
-                                value: TypedValue::Bool(true),
-                                props: vec![],
-                            },
-                            Value {
-                                value: TypedValue::Bool(false),
-                                props: vec![],
-                            },
-                        ]),
-                        props: vec![],
+            props: indexmap! {
+                "foo".into() => Value {
+                    value: TypedValue::Array(vec![
+                        Value {
+                            value: TypedValue::Bool(true),
+                            props: Default::default(),
+                        },
+                        Value {
+                            value: TypedValue::Bool(false),
+                            props: Default::default(),
+                        },
+                    ]),
+                    props: Default::default(),
+                },
+                "bar".into() => Value {
+                    value: TypedValue::Empty,
+                    props: indexmap! {
+                        "baz".into() => Value {
+                            value: TypedValue::String("qux".into()),
+                            props: Default::default(),
+                        },
                     },
                 },
-                Property {
-                    name: "bar".into(),
-                    value: Value {
-                        value: TypedValue::Empty,
-                        props: vec![Property {
-                            name: "baz".into(),
-                            value: Value {
-                                value: TypedValue::String("qux".into()),
-                                props: vec![],
-                            },
-                        }],
-                    },
-                },
-            ],
+            },
         };
         channel.write_xml(&mut buf).unwrap();
         let xml = String::from_utf8(buf).unwrap();
@@ -700,36 +675,42 @@ mod tests {
 
     #[test]
     fn deserialize() {
-        let prop: Property<'static> = serde_json::from_str(
+        let channel: Channel<'static> = serde_json::from_str(
             r#"
             {
-                "name": "foo",
-                "props": [
-                    {
-                        "name": "foo",
-                        "type": "uint",
-                        "value": 42
+                "name": "channel",
+                "version": "1.0",
+                "props": {
+                    "foo": {
+                        "type": "string",
+                        "value": "bar",
+                        "props": {
+                            "baz": {
+                                "type": "uint",
+                                "value": 42
+                            }
+                        }
                     }
-                ],
-                "type": "string",
-                "value": "bar"
+                }
             }
             "#,
         )
         .unwrap();
         assert_eq!(
-            prop,
-            Property {
-                name: "foo".into(),
-                value: Value {
-                    value: TypedValue::String("bar".into()),
-                    props: vec![Property {
-                        name: "foo".into(),
-                        value: Value {
-                            value: TypedValue::Uint(42),
-                            props: vec![],
+            channel,
+            Channel {
+                name: "channel".into(),
+                version: "1.0".into(),
+                props: indexmap! {
+                    "foo".into() => Value {
+                        value: TypedValue::String("bar".into()),
+                        props: indexmap! {
+                            "baz".into() => Value {
+                                value: TypedValue::Uint(42),
+                                props: Default::default(),
+                            },
                         },
-                    }],
+                    },
                 },
             }
         );
