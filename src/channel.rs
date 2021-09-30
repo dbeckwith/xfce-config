@@ -1,5 +1,5 @@
+use crate::diff;
 use anyhow::{bail, Context, Result};
-use indexmap::IndexMap;
 use quick_xml::{
     events::{attributes::Attribute, BytesDecl, BytesStart, Event},
     Reader,
@@ -8,10 +8,11 @@ use quick_xml::{
 use serde::Deserialize;
 use std::{
     borrow::Cow,
+    collections::BTreeMap,
     io::{BufRead, Write},
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Channel<'a> {
     pub name: Cow<'a, str>,
@@ -20,9 +21,9 @@ pub struct Channel<'a> {
     pub props: Properties<'a>,
 }
 
-pub type Properties<'a> = IndexMap<Cow<'a, str>, Value<'a>>;
+pub type Properties<'a> = BTreeMap<Cow<'a, str>, Value<'a>>;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Value<'a> {
     #[serde(flatten)]
@@ -31,7 +32,7 @@ pub struct Value<'a> {
     pub props: Properties<'a>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "kebab-case")]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum TypedValue<'a> {
@@ -55,10 +56,6 @@ impl<'a> Channel<'a> {
             version: version.into(),
             props,
         }
-    }
-
-    pub fn merge(&mut self, other: Self) {
-        merge_props(&mut self.props, other.props);
     }
 }
 
@@ -115,26 +112,108 @@ impl<'a> Value<'a> {
             props,
         }
     }
+}
 
-    pub fn merge(&mut self, other: Self) {
-        // actual value doesn't change, just merge the props
-        merge_props(&mut self.props, other.props);
+#[derive(Debug)]
+pub struct ChannelPatch<'a> {
+    name: <Cow<'a, str> as diff::Diff>::Patch,
+    version: <Cow<'a, str> as diff::Diff>::Patch,
+    props: <Properties<'a> as diff::Diff>::Patch,
+}
+
+impl<'a> diff::Diff for Channel<'a> {
+    type Patch = ChannelPatch<'a>;
+
+    fn diff(&self, other: &Self) -> Self::Patch {
+        ChannelPatch {
+            name: self.name.diff(&other.name),
+            version: self.version.diff(&other.version),
+            props: self.props.diff(&other.props),
+        }
     }
 }
 
-fn merge_props<'a>(
-    self_props: &mut Properties<'a>,
-    other_props: Properties<'a>,
-) {
-    for (other_name, other_value) in other_props {
-        use indexmap::map::Entry;
-        match self_props.entry(other_name) {
-            Entry::Occupied(mut entry) => {
-                entry.get_mut().merge(other_value);
+impl diff::Patch for ChannelPatch<'_> {
+    fn is_empty(&self) -> bool {
+        self.name.is_empty() && self.version.is_empty() && self.props.is_empty()
+    }
+}
+
+#[derive(Debug)]
+pub struct ValuePatch<'a> {
+    value: <TypedValue<'a> as diff::Diff>::Patch,
+    props: <Properties<'a> as diff::Diff>::Patch,
+}
+
+impl<'a> diff::Diff for Value<'a> {
+    type Patch = ValuePatch<'a>;
+
+    fn diff(&self, other: &Self) -> Self::Patch {
+        ValuePatch {
+            value: self.value.diff(&other.value),
+            props: self.props.diff(&other.props),
+        }
+    }
+}
+
+impl diff::Patch for ValuePatch<'_> {
+    fn is_empty(&self) -> bool {
+        self.value.is_empty() && self.props.is_empty()
+    }
+}
+
+#[derive(Debug)]
+pub enum TypedValuePatch<'a> {
+    Bool(<bool as diff::Diff>::Patch),
+    Int(<i32 as diff::Diff>::Patch),
+    Uint(<u32 as diff::Diff>::Patch),
+    Double(<f64 as diff::Diff>::Patch),
+    String(<Cow<'a, str> as diff::Diff>::Patch),
+    Array(<Vec<Value<'a>> as diff::Diff>::Patch),
+    Empty,
+    Changed(TypedValue<'a>),
+}
+
+impl<'a> diff::Diff for TypedValue<'a> {
+    type Patch = TypedValuePatch<'a>;
+
+    fn diff(&self, other: &Self) -> Self::Patch {
+        match (self, other) {
+            (Self::Bool(self_bool), Self::Bool(other_bool)) => {
+                TypedValuePatch::Bool(self_bool.diff(other_bool))
             },
-            Entry::Vacant(entry) => {
-                entry.insert(other_value);
+            (Self::Int(self_int), Self::Int(other_int)) => {
+                TypedValuePatch::Int(self_int.diff(other_int))
             },
+            (Self::Uint(self_uint), Self::Uint(other_uint)) => {
+                TypedValuePatch::Uint(self_uint.diff(other_uint))
+            },
+            (Self::Double(self_double), Self::Double(other_double)) => {
+                TypedValuePatch::Double(self_double.diff(other_double))
+            },
+            (Self::String(self_string), Self::String(other_string)) => {
+                TypedValuePatch::String(self_string.diff(other_string))
+            },
+            (Self::Array(self_array), Self::Array(other_array)) => {
+                TypedValuePatch::Array(self_array.diff(other_array))
+            },
+            (Self::Empty, Self::Empty) => TypedValuePatch::Empty,
+            (_self, other) => TypedValuePatch::Changed(other.clone()),
+        }
+    }
+}
+
+impl diff::Patch for TypedValuePatch<'_> {
+    fn is_empty(&self) -> bool {
+        match self {
+            TypedValuePatch::Bool(patch) => patch.is_empty(),
+            TypedValuePatch::Int(patch) => patch.is_empty(),
+            TypedValuePatch::Uint(patch) => patch.is_empty(),
+            TypedValuePatch::Double(patch) => patch.is_empty(),
+            TypedValuePatch::String(patch) => patch.is_empty(),
+            TypedValuePatch::Array(patch) => patch.is_empty(),
+            TypedValuePatch::Empty => true,
+            TypedValuePatch::Changed(_) => true,
         }
     }
 }
@@ -575,18 +654,18 @@ impl Channel<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use indexmap::indexmap;
+    use maplit::btreemap;
 
     #[test]
     fn read_xml() {
         let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <channel name="panel" version="1.0">
+    <property name="bar" type="empty">
+        <property name="baz" type="string" value="qux"/>
+    </property>
     <property name="foo" type="array">
         <value type="bool" value="true"/>
         <value type="bool" value="false"/>
-    </property>
-    <property name="bar" type="empty">
-        <property name="baz" type="string" value="qux"/>
     </property>
 </channel>
 "#;
@@ -596,7 +675,7 @@ mod tests {
             Channel {
                 name: "panel".into(),
                 version: "1.0".into(),
-                props: indexmap! {
+                props: btreemap! {
                     "foo".into() => Value {
                         value: TypedValue::Array(vec![
                             Value {
@@ -612,7 +691,7 @@ mod tests {
                     },
                     "bar".into() => Value {
                         value: TypedValue::Empty,
-                        props: indexmap! {
+                        props: btreemap! {
                             "baz".into() => Value {
                                 value: TypedValue::String("qux".into()),
                                 props: Default::default(),
@@ -630,7 +709,7 @@ mod tests {
         let channel = Channel {
             name: "panel".into(),
             version: "1.0".into(),
-            props: indexmap! {
+            props: btreemap! {
                 "foo".into() => Value {
                     value: TypedValue::Array(vec![
                         Value {
@@ -646,7 +725,7 @@ mod tests {
                 },
                 "bar".into() => Value {
                     value: TypedValue::Empty,
-                    props: indexmap! {
+                    props: btreemap! {
                         "baz".into() => Value {
                             value: TypedValue::String("qux".into()),
                             props: Default::default(),
@@ -661,12 +740,12 @@ mod tests {
             xml,
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <channel name="panel" version="1.0">
+    <property name="bar" type="empty">
+        <property name="baz" type="string" value="qux"/>
+    </property>
     <property name="foo" type="array">
         <value type="bool" value="true"/>
         <value type="bool" value="false"/>
-    </property>
-    <property name="bar" type="empty">
-        <property name="baz" type="string" value="qux"/>
     </property>
 </channel>
 "#
@@ -701,10 +780,10 @@ mod tests {
             Channel {
                 name: "channel".into(),
                 version: "1.0".into(),
-                props: indexmap! {
+                props: btreemap! {
                     "foo".into() => Value {
                         value: TypedValue::String("bar".into()),
-                        props: indexmap! {
+                        props: btreemap! {
                             "baz".into() => Value {
                                 value: TypedValue::Uint(42),
                                 props: Default::default(),

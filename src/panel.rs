@@ -9,10 +9,10 @@ pub struct PluginConfig<'a> {
     pub file: PluginConfigFile<'a>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 pub struct PluginId<'a> {
-    pub id: u64,
     pub r#type: Cow<'a, str>,
+    pub id: u64,
 }
 
 #[derive(Debug, Deserialize)]

@@ -3,13 +3,15 @@
 
 pub mod cfg;
 pub mod channel;
+pub mod diff;
 pub mod panel;
 
-use self::channel::Channel;
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use channel::Channel;
+use serde::{de, Deserialize};
 use std::{
-    collections::HashMap,
+    borrow::Cow,
+    collections::BTreeMap,
     fs,
     io::{self, Read},
     path::Path,
@@ -18,30 +20,31 @@ use std::{
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct XfceConfig<'a> {
-    pub channels: Vec<Channel<'a>>,
-    pub panel_plugin_configs: Vec<self::panel::PluginConfig<'a>>,
+    #[serde(deserialize_with = "de_xfce_config_channels")]
+    pub channels: BTreeMap<Cow<'a, str>, Channel<'a>>,
+    #[serde(deserialize_with = "de_xfce_config_panel_plugin_configs")]
+    pub panel_plugin_configs:
+        BTreeMap<panel::PluginId<'a>, panel::PluginConfig<'a>>,
 }
 
-impl XfceConfig<'_> {
-    pub fn merge(&mut self, other: Self) {
-        let mut self_channels_by_name = self
-            .channels
-            .iter_mut()
-            .map(|channel| (channel.name.to_owned(), channel))
-            .collect::<HashMap<_, _>>();
-        let mut new_channels = Vec::new();
-        for other_channel in other.channels {
-            if let Some(self_channel) =
-                self_channels_by_name.get_mut(&*other_channel.name)
-            {
-                self_channel.merge(other_channel);
-            } else {
-                new_channels.push(other_channel);
-            }
-        }
-        self.channels.extend(new_channels);
+#[derive(Debug)]
+pub struct XfceConfigPatch<'a> {
+    channels: <BTreeMap<Cow<'a, str>, Channel<'a>> as diff::Diff>::Patch,
+}
 
-        // TODO: merge panel plugin configs
+impl<'a> diff::Diff for XfceConfig<'a> {
+    type Patch = XfceConfigPatch<'a>;
+
+    fn diff(&self, other: &Self) -> Self::Patch {
+        XfceConfigPatch {
+            channels: self.channels.diff(&other.channels),
+        }
+    }
+}
+
+impl diff::Patch for XfceConfigPatch<'_> {
+    fn is_empty(&self) -> bool {
+        self.channels.is_empty()
     }
 }
 
@@ -70,7 +73,10 @@ impl XfceConfig<'static> {
                     .context("error reading channel XML")?;
                 Ok(channel)
             })
-            .collect::<Result<Vec<_>>>()
+            .map(|channel| {
+                channel.map(|channel| (channel.name.clone(), channel))
+            })
+            .collect::<Result<BTreeMap<_, _>>>()
             .context("error loading channels data")?;
 
         let panel_plugin_configs = panel_plugins_dir
@@ -79,10 +85,15 @@ impl XfceConfig<'static> {
             .map(|entry| {
                 let entry = entry.context("error reading dir entry")?;
                 let path = entry.path();
-                self::panel::PluginConfig::from_path(&path)
+                panel::PluginConfig::from_path(&path)
             })
             .filter_map(Result::transpose)
-            .collect::<Result<Vec<_>>>()
+            .map(|plugin_config| {
+                plugin_config.map(|plugin_config| {
+                    (plugin_config.plugin.clone(), plugin_config)
+                })
+            })
+            .collect::<Result<BTreeMap<_, _>>>()
             .context("error loading panel plugins data")?;
 
         Ok(Self {
@@ -90,4 +101,31 @@ impl XfceConfig<'static> {
             panel_plugin_configs,
         })
     }
+}
+
+fn de_xfce_config_channels<'a, 'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<Cow<'a, str>, Channel<'a>>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let channels = Vec::<Channel<'_>>::deserialize(deserializer)?;
+    Ok(channels
+        .into_iter()
+        .map(|channel| (channel.name.clone(), channel))
+        .collect::<BTreeMap<_, _>>())
+}
+
+fn de_xfce_config_panel_plugin_configs<'a, 'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<panel::PluginId<'a>, panel::PluginConfig<'a>>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let panel_plugin_configs =
+        Vec::<panel::PluginConfig<'_>>::deserialize(deserializer)?;
+    Ok(panel_plugin_configs
+        .into_iter()
+        .map(|plugin_config| (plugin_config.plugin.clone(), plugin_config))
+        .collect::<BTreeMap<_, _>>())
 }

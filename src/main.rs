@@ -2,7 +2,7 @@
 #![deny(clippy::correctness)]
 
 use anyhow::{Context, Result};
-use xfce_config::XfceConfig;
+use xfce_config::{diff::Diff, XfceConfig};
 
 fn main() -> Result<()> {
     let new_config = XfceConfig::from_json_reader(std::io::stdin())
@@ -17,12 +17,10 @@ fn main() -> Result<()> {
         .context("error reading config from environment")?;
     dbg!(&existing_config);
 
-    let merged_config = {
-        let mut new_config = new_config;
-        new_config.merge(existing_config);
-        new_config
-    };
-    dbg!(&merged_config);
+    let diff = existing_config.diff(&new_config);
+    dbg!(&diff);
+
+    // diff.apply(xfconf);
 
     Ok(())
 }
