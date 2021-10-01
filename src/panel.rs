@@ -1,7 +1,7 @@
 use crate::cfg::Cfg;
 use anyhow::{Context, Result};
-use serde::Deserialize;
-use std::{borrow::Cow, fs, io, path::Path};
+use serde::{de, Deserialize};
+use std::{borrow::Cow, collections::BTreeMap, fs, io, path::Path};
 
 #[derive(Debug, Deserialize)]
 pub struct PluginConfig<'a> {
@@ -24,7 +24,8 @@ pub enum PluginConfigFile<'a> {
 
 #[derive(Debug, Deserialize)]
 pub struct DesktopDir<'a> {
-    pub files: Vec<DesktopFile<'a>>,
+    #[serde(deserialize_with = "de_desktop_dir_files")]
+    pub files: BTreeMap<u64, DesktopFile<'a>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,10 +103,10 @@ impl PluginConfig<'static> {
                         DesktopFileContent::Cfg(cfg)
                     };
 
-                    Ok(Some(DesktopFile { id, content }))
+                    Ok(Some((id, DesktopFile { id, content })))
                 })
                 .filter_map(Result::transpose)
-                .collect::<Result<Vec<_>>>()
+                .collect::<Result<BTreeMap<_, _>>>()
                 .context("error loading desktop files")?;
             PluginConfigFile::DesktopDir(DesktopDir { files })
         } else {
@@ -118,4 +119,17 @@ impl PluginConfig<'static> {
 
         Ok(Some(PluginConfig { file, plugin }))
     }
+}
+
+fn de_desktop_dir_files<'a, 'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<u64, DesktopFile<'a>>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let files = Vec::<DesktopFile<'_>>::deserialize(deserializer)?;
+    Ok(files
+        .into_iter()
+        .map(|file| (file.id, file))
+        .collect::<BTreeMap<_, _>>())
 }
