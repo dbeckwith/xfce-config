@@ -11,110 +11,37 @@ pub trait Patch {
     fn is_empty(&self) -> bool;
 }
 
-// FIXME: don't store delta for primitives, need complete value for apply
+pub trait PrimDiff: PartialEq {}
 
 #[derive(Debug)]
-pub struct BoolPatch {
-    flip: bool,
+pub struct PrimPatch<T> {
+    value: Option<T>,
 }
 
-impl Diff for bool {
-    type Patch = BoolPatch;
+impl<T> Diff for T
+where
+    T: PrimDiff + Clone,
+{
+    type Patch = PrimPatch<T>;
 
     fn diff(&self, other: &Self) -> Self::Patch {
-        BoolPatch {
-            flip: self != other,
+        PrimPatch {
+            value: (self != other).then(|| other.clone()),
         }
     }
 }
 
-impl Patch for BoolPatch {
+impl<T> Patch for PrimPatch<T> {
     fn is_empty(&self) -> bool {
-        !self.flip
+        self.value.is_none()
     }
 }
 
-#[derive(Debug)]
-pub struct U32Patch {
-    diff: i32,
-}
-
-impl Diff for u32 {
-    type Patch = U32Patch;
-
-    fn diff(&self, other: &Self) -> Self::Patch {
-        U32Patch {
-            diff: (*other as i32) - (*self as i32),
-        }
-    }
-}
-
-impl Patch for U32Patch {
-    fn is_empty(&self) -> bool {
-        self.diff == 0
-    }
-}
-
-#[derive(Debug)]
-pub struct I32Patch {
-    diff: i32,
-}
-
-impl Diff for i32 {
-    type Patch = I32Patch;
-
-    fn diff(&self, other: &Self) -> Self::Patch {
-        I32Patch {
-            diff: (*other as i32) - (*self as i32),
-        }
-    }
-}
-
-impl Patch for I32Patch {
-    fn is_empty(&self) -> bool {
-        self.diff == 0
-    }
-}
-
-#[derive(Debug)]
-pub struct F64Patch {
-    diff: f64,
-}
-
-impl Diff for f64 {
-    type Patch = F64Patch;
-
-    fn diff(&self, other: &Self) -> Self::Patch {
-        F64Patch { diff: other - self }
-    }
-}
-
-impl Patch for F64Patch {
-    fn is_empty(&self) -> bool {
-        self.diff == 0.0
-    }
-}
-
-#[derive(Debug)]
-pub struct CowStrPatch<'a> {
-    new: Option<Cow<'a, str>>,
-}
-
-impl<'a> Diff for Cow<'a, str> {
-    type Patch = CowStrPatch<'a>;
-
-    fn diff(&self, other: &Self) -> Self::Patch {
-        CowStrPatch {
-            new: (self != other).then(|| other.clone()),
-        }
-    }
-}
-
-impl Patch for CowStrPatch<'_> {
-    fn is_empty(&self) -> bool {
-        self.new.is_none()
-    }
-}
+impl PrimDiff for bool {}
+impl PrimDiff for u32 {}
+impl PrimDiff for i32 {}
+impl PrimDiff for f64 {}
+impl PrimDiff for Cow<'_, str> {}
 
 #[derive(Debug)]
 pub struct VecPatch<T>
