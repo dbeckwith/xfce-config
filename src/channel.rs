@@ -21,7 +21,9 @@ pub struct Channel<'a> {
     pub props: Properties<'a>,
 }
 
-pub type Properties<'a> = BTreeMap<Cow<'a, str>, Value<'a>>;
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(test, derive(PartialEq))]
+pub struct Properties<'a>(BTreeMap<Cow<'a, str>, Value<'a>>);
 
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -56,6 +58,12 @@ impl<'a> Channel<'a> {
             version: version.into(),
             props,
         }
+    }
+}
+
+impl<'a> Properties<'a> {
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
     }
 }
 
@@ -118,7 +126,7 @@ impl<'a> Value<'a> {
 pub struct ChannelPatch<'a> {
     name: <Cow<'a, str> as diff::Diff>::Patch,
     version: <Cow<'a, str> as diff::Diff>::Patch,
-    props: <Properties<'a> as diff::Diff>::Patch,
+    props: PropertiesPatch<'a>,
 }
 
 impl<'a> diff::Diff for Channel<'a> {
@@ -128,7 +136,11 @@ impl<'a> diff::Diff for Channel<'a> {
         ChannelPatch {
             name: self.name.diff(&other.name),
             version: self.version.diff(&other.version),
-            props: self.props.diff(&other.props),
+            props: self.props.diff_with_path(
+                &other.props,
+                &Path::new(),
+                PropertiesCtx::Channel(self),
+            ),
         }
     }
 }
@@ -140,18 +152,68 @@ impl diff::Patch for ChannelPatch<'_> {
 }
 
 #[derive(Debug)]
-pub struct ValuePatch<'a> {
-    value: <TypedValue<'a> as diff::Diff>::Patch,
-    props: <Properties<'a> as diff::Diff>::Patch,
+struct PropertiesPatch<'a> {
+    _marker: ::std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a> diff::Diff for Value<'a> {
-    type Patch = ValuePatch<'a>;
+enum PropertiesCtx<'a, 'b> {
+    Channel(&'b Channel<'a>),
+    Value(&'b Value<'a>),
+}
 
-    fn diff(&self, other: &Self) -> Self::Patch {
+impl<'a> Properties<'a> {
+    fn diff_with_path<'b, 'p>(
+        &'b self,
+        other: &'b Self,
+        path: &'p Path<'b>,
+        ctx: PropertiesCtx<'a, 'b>,
+    ) -> PropertiesPatch<'a> {
+        for (key, self_value) in self.0.iter() {
+            if let Some(other_value) = other.0.get(key) {
+                // TODO: should properties be self or other?
+                self_value.diff_with_path(
+                    other_value,
+                    &path.push(match ctx {
+                        PropertiesCtx::Channel(ctx) => {
+                            PathPart::Channel(ctx, self, key)
+                        },
+                        PropertiesCtx::Value(ctx) => {
+                            PathPart::Props(ctx, self, key)
+                        },
+                    }),
+                );
+            }
+        }
+        todo!()
+    }
+}
+
+impl diff::Patch for PropertiesPatch<'_> {
+    fn is_empty(&self) -> bool {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
+struct ValuePatch<'a> {
+    value: TypedValuePatch<'a>,
+    props: PropertiesPatch<'a>,
+}
+
+impl<'a> Value<'a> {
+    fn diff_with_path<'b, 'p>(
+        &'b self,
+        other: &'b Self,
+        path: &'p Path<'b>,
+    ) -> ValuePatch<'a> {
         ValuePatch {
-            value: self.value.diff(&other.value),
-            props: self.props.diff(&other.props),
+            // TODO: should ctx be self or other?
+            value: self.value.diff_with_path(&other.value, path, self),
+            props: self.props.diff_with_path(
+                &other.props,
+                path,
+                PropertiesCtx::Value(self),
+            ),
         }
     }
 }
@@ -163,21 +225,25 @@ impl diff::Patch for ValuePatch<'_> {
 }
 
 #[derive(Debug)]
-pub enum TypedValuePatch<'a> {
+enum TypedValuePatch<'a> {
     Bool(<bool as diff::Diff>::Patch),
     Int(<i32 as diff::Diff>::Patch),
     Uint(<u32 as diff::Diff>::Patch),
     Double(<f64 as diff::Diff>::Patch),
     String(<Cow<'a, str> as diff::Diff>::Patch),
-    Array(<Vec<Value<'a>> as diff::Diff>::Patch),
+    Array(ArrayPatch<'a>),
     Empty,
     Changed(TypedValue<'a>),
 }
 
-impl<'a> diff::Diff for TypedValue<'a> {
-    type Patch = TypedValuePatch<'a>;
-
-    fn diff(&self, other: &Self) -> Self::Patch {
+impl<'a> TypedValue<'a> {
+    fn diff_with_path<'b, 'p>(
+        &'b self,
+        other: &'b Self,
+        path: &'p Path<'b>,
+        ctx: &'b Value<'a>,
+    ) -> TypedValuePatch<'a> {
+        use diff::Diff;
         match (self, other) {
             (Self::Bool(self_bool), Self::Bool(other_bool)) => {
                 TypedValuePatch::Bool(self_bool.diff(other_bool))
@@ -195,7 +261,12 @@ impl<'a> diff::Diff for TypedValue<'a> {
                 TypedValuePatch::String(self_string.diff(other_string))
             },
             (Self::Array(self_array), Self::Array(other_array)) => {
-                TypedValuePatch::Array(self_array.diff(other_array))
+                TypedValuePatch::Array(array_diff_with_path(
+                    self_array,
+                    other_array,
+                    path,
+                    ctx,
+                ))
             },
             (Self::Empty, Self::Empty) => TypedValuePatch::Empty,
             (_self, other) => TypedValuePatch::Changed(other.clone()),
@@ -215,6 +286,102 @@ impl diff::Patch for TypedValuePatch<'_> {
             TypedValuePatch::Empty => true,
             TypedValuePatch::Changed(_) => true,
         }
+    }
+}
+
+#[derive(Debug)]
+struct ArrayPatch<'a> {
+    _marker: ::std::marker::PhantomData<&'a ()>,
+}
+
+fn array_diff_with_path<'a, 'b, 'p>(
+    self_array: &'b [Value<'a>],
+    other_array: &'b [Value<'a>],
+    path: &'p Path<'b>,
+    ctx: &'b Value<'a>,
+) -> ArrayPatch<'a> {
+    for (idx, (self_value, other_value)) in
+        self_array.iter().zip(other_array.iter()).enumerate()
+    {
+        // TODO: should value slice be self or other?
+        self_value.diff_with_path(
+            other_value,
+            &path.push(PathPart::Array(ctx, self_array, idx)),
+        );
+    }
+    todo!()
+}
+
+impl diff::Patch for ArrayPatch<'_> {
+    fn is_empty(&self) -> bool {
+        todo!()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Path<'a>(im::Vector<PathPart<'a>>);
+
+#[derive(Debug, Clone, Copy)]
+enum PathPart<'a> {
+    Channel(&'a Channel<'a>, &'a Properties<'a>, &'a str),
+    Array(&'a Value<'a>, &'a [Value<'a>], usize),
+    Props(&'a Value<'a>, &'a Properties<'a>, &'a str),
+}
+
+impl<'a> Path<'a> {
+    fn new() -> Self {
+        Self(im::Vector::new())
+    }
+
+    fn push(&self, part: PathPart<'a>) -> Self {
+        let mut path = self.clone();
+        path.0.push_back(part);
+        path
+    }
+
+    fn should_clear(&self) -> bool {
+        use if_chain::if_chain;
+        let mut parts = self.0.iter();
+        if_chain! {
+            if let Some(PathPart::Props(_, _, "panels")) = parts.next();
+            if let Some(PathPart::Array(_, _, _)) = parts.next();
+            if parts.next().is_none();
+            then {
+                return true;
+            }
+        }
+        let mut parts = self.0.iter();
+        if_chain! {
+            if let Some(PathPart::Props(_, _, "panels")) = parts.next();
+            if let Some(PathPart::Props(_, _, _)) = parts.next();
+            if let Some(PathPart::Props(_, _, "plugin-ids")) = parts.next();
+            if let Some(PathPart::Array(_, _, _)) = parts.next();
+            if parts.next().is_none();
+            then {
+                return true;
+            }
+        }
+        if_chain! {
+            if let Some(PathPart::Props(_, _, "plugins")) = parts.next();
+            if parts.next().is_none();
+            then {
+                return true;
+            }
+        }
+        let mut parts = self.0.iter();
+        if_chain! {
+            if let Some(PathPart::Props(_, _, "plugins")) = parts.next();
+            if let Some(PathPart::Props(value, _, _)) = parts.next();
+            if let TypedValue::String(value) = &value.value;
+            if value == "launcher";
+            if let Some(PathPart::Props(_, _, "items")) = parts.next();
+            if let Some(PathPart::Array(_, _, _)) = parts.next();
+            if parts.next().is_none();
+            then {
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -358,7 +525,7 @@ impl Channel<'_> {
                                 r#type,
                                 value,
                             )?;
-                            if props.insert(name.clone(), value).is_some() {
+                            if props.0.insert(name.clone(), value).is_some() {
                                 bail!("duplicate property {}", name);
                             }
                         },
@@ -577,7 +744,7 @@ impl Channel<'_> {
                 _ => &[],
             };
 
-            if props.is_empty() && sub_values.is_empty() {
+            if props.0.is_empty() && sub_values.is_empty() {
                 writer.write_event(Event::Empty(tag))?;
             } else {
                 let end = tag.to_end();
@@ -599,7 +766,7 @@ impl Channel<'_> {
         where
             W: Write,
         {
-            for (name, value) in props {
+            for (name, value) in &props.0 {
                 let mut tag = BytesStart::borrowed_name(b"property");
                 tag.push_attribute(Attribute {
                     key: b"name",
@@ -636,7 +803,7 @@ impl Channel<'_> {
             value: version.as_bytes().into(),
         });
 
-        if props.is_empty() {
+        if props.0.is_empty() {
             writer.write_event(Event::Empty(tag))?;
         } else {
             let end = tag.to_end();
@@ -675,7 +842,7 @@ mod tests {
             Channel {
                 name: "panel".into(),
                 version: "1.0".into(),
-                props: btreemap! {
+                props: Properties(btreemap! {
                     "foo".into() => Value {
                         value: TypedValue::Array(vec![
                             Value {
@@ -691,14 +858,14 @@ mod tests {
                     },
                     "bar".into() => Value {
                         value: TypedValue::Empty,
-                        props: btreemap! {
+                        props: Properties(btreemap! {
                             "baz".into() => Value {
                                 value: TypedValue::String("qux".into()),
                                 props: Default::default(),
                             },
-                        },
+                        }),
                     },
-                },
+                }),
             }
         );
     }
@@ -709,7 +876,7 @@ mod tests {
         let channel = Channel {
             name: "panel".into(),
             version: "1.0".into(),
-            props: btreemap! {
+            props: Properties(btreemap! {
                 "foo".into() => Value {
                     value: TypedValue::Array(vec![
                         Value {
@@ -725,14 +892,14 @@ mod tests {
                 },
                 "bar".into() => Value {
                     value: TypedValue::Empty,
-                    props: btreemap! {
+                    props: Properties(btreemap! {
                         "baz".into() => Value {
                             value: TypedValue::String("qux".into()),
                             props: Default::default(),
                         },
-                    },
+                    }),
                 },
-            },
+            }),
         };
         channel.write_xml(&mut buf).unwrap();
         let xml = String::from_utf8(buf).unwrap();
@@ -780,17 +947,17 @@ mod tests {
             Channel {
                 name: "channel".into(),
                 version: "1.0".into(),
-                props: btreemap! {
+                props: Properties(btreemap! {
                     "foo".into() => Value {
                         value: TypedValue::String("bar".into()),
-                        props: btreemap! {
+                        props: Properties(btreemap! {
                             "baz".into() => Value {
                                 value: TypedValue::Uint(42),
                                 props: Default::default(),
                             },
-                        },
+                        }),
                     },
-                },
+                }),
             }
         );
     }
