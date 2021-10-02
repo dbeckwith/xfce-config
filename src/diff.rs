@@ -11,6 +11,8 @@ pub trait Patch {
     fn is_empty(&self) -> bool;
 }
 
+// FIXME: don't store delta for primitives, need complete value for apply
+
 #[derive(Debug)]
 pub struct BoolPatch {
     flip: bool,
@@ -119,7 +121,7 @@ pub struct VecPatch<T>
 where
     T: Diff,
 {
-    changed: Vec<T::Patch>,
+    changed: BTreeMap<usize, T::Patch>,
     added: Vec<T>,
 }
 
@@ -134,11 +136,12 @@ where
         let changed = self
             .iter()
             .zip(other_elements.by_ref())
-            .map(|(self_element, other_element)| {
-                self_element.diff(other_element)
+            .enumerate()
+            .filter_map(|(idx, (self_element, other_element))| {
+                let patch = self_element.diff(other_element);
+                (!patch.is_empty()).then(|| (idx, patch))
             })
-            .filter(|patch| !patch.is_empty())
-            .collect::<Vec<_>>();
+            .collect::<BTreeMap<_, _>>();
         let added = other_elements.cloned().collect::<Vec<_>>();
         VecPatch { changed, added }
     }
