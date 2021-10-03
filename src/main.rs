@@ -2,10 +2,20 @@
 #![deny(clippy::correctness)]
 
 use anyhow::{Context, Result};
+use structopt::StructOpt;
 use xfce_config::{XfceConfig, XfceConfigPatch};
 
+#[derive(StructOpt)]
+struct Args {
+    #[structopt(long)]
+    apply: bool,
+}
+
 fn main() -> Result<()> {
-    let dry_run = true;
+    let args = Args::from_args();
+
+    let dry_run = !args.apply;
+    dbg!(dry_run);
 
     let new_config = XfceConfig::from_json_reader(std::io::stdin())
         .context("error reading input JSON")?;
