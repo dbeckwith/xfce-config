@@ -807,19 +807,16 @@ pub struct ChannelsApplier {
 impl ChannelsApplier {
     #[allow(clippy::new_without_default)]
     pub fn new(dry_run: bool) -> Result<Self> {
-        let connection =
-            gio::bus_get_sync::<gio::Cancellable>(gio::BusType::Session, None)
-                .context("error getting bus")?;
-        let dbus = gio::DBusProxy::new_sync::<gio::Cancellable>(
-            &connection,
+        let dbus = gio::DBusProxy::for_bus_sync::<gio::Cancellable>(
+            gio::BusType::Session,
             gio::DBusProxyFlags::NONE,
             None,
-            Some("org.xfce.Xfconf"),
+            "org.xfce.Xfconf",
             "/org/xfce/Xfconf",
             "org.xfce.Xfconf",
             None,
         )
-        .context("error creating proxy")?;
+        .context("error creating dbus proxy")?;
         Ok(Self { dry_run, dbus })
     }
 
