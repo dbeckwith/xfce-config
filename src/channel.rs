@@ -221,7 +221,7 @@ impl<'a> Properties<'a> {
                         )
                     },
                 });
-                let patch = self_value.diff_with_path(other_value, &path);
+                let patch = self_value.diff(other_value, &path);
                 if !patch.is_empty() {
                     changed.insert(key.clone(), patch);
                 }
@@ -261,13 +261,13 @@ struct ValuePatch<'a> {
 }
 
 impl<'a> Value<'a> {
-    fn diff_with_path<'b, 'p>(
+    fn diff<'b, 'p>(
         &'b self,
         other: &'b Self,
         path: &'p Path<'b>,
     ) -> ValuePatch<'a> {
         ValuePatch {
-            value: self.value.diff_with_path(&other.value, path, (self, other)),
+            value: self.value.diff(&other.value),
             props: self.props.diff_with_path(
                 &other.props,
                 path,
@@ -296,12 +296,7 @@ enum TypedValuePatch<'a> {
 }
 
 impl<'a> TypedValue<'a> {
-    fn diff_with_path<'b, 'p>(
-        &'b self,
-        other: &'b Self,
-        path: &'p Path<'b>,
-        ctx: (&'b Value<'a>, &'b Value<'a>),
-    ) -> TypedValuePatch<'a> {
+    fn diff(&self, other: &Self) -> TypedValuePatch<'a> {
         use diff::Diff;
         match (self, other) {
             (Self::Bool(self_bool), Self::Bool(other_bool)) => {
@@ -320,12 +315,7 @@ impl<'a> TypedValue<'a> {
                 TypedValuePatch::String(self_string.diff(other_string))
             },
             (Self::Array(self_array), Self::Array(other_array)) => {
-                TypedValuePatch::Array(array_diff_with_path(
-                    self_array,
-                    other_array,
-                    path,
-                    ctx,
-                ))
+                TypedValuePatch::Array(array_diff(self_array, other_array))
             },
             (Self::Empty, Self::Empty) => TypedValuePatch::Empty,
             (_self, other) => TypedValuePatch::Changed(other.clone()),
@@ -350,87 +340,21 @@ impl diff::Patch for TypedValuePatch<'_> {
 
 #[derive(Debug)]
 struct ArrayPatch<'a> {
-    changed: BTreeMap<usize, ValuePatch<'a>>,
-    added: Vec<Value<'a>>,
-    removed: BTreeSet<usize>,
+    array: Option<Vec<Value<'a>>>,
 }
 
-fn array_diff_with_path<'a, 'b, 'p>(
-    self_array: &'b [Value<'a>],
-    other_array: &'b [Value<'a>],
-    path: &'p Path<'b>,
-    ctx: (&'b Value<'a>, &'b Value<'a>),
+fn array_diff<'a>(
+    self_array: &[Value<'a>],
+    other_array: &[Value<'a>],
 ) -> ArrayPatch<'a> {
-    use diff::Patch;
-    let remove_old = (|| {
-        use if_chain::if_chain;
-        // remove old panels
-        let mut parts = path.0.iter();
-        if_chain! {
-            if let Some(PathPart::Channel((_, channel), _, "panels")) = parts.next();
-            if channel.name == "xfce4-panel";
-            if parts.next().is_none();
-            then { return true; }
-        }
-        drop(parts);
-        // remove old plugin ids from a panel
-        let mut parts = path.0.iter();
-        if_chain! {
-            if let Some(PathPart::Channel((_, channel), _, "panels")) = parts.next();
-            if channel.name == "xfce4-panel";
-            if let Some(PathPart::Props(_, _, _)) = parts.next();
-            if let Some(PathPart::Props(_, _, "plugin-ids")) = parts.next();
-            if parts.next().is_none();
-            then { return true; }
-        }
-        drop(parts);
-        // remove old launcher items
-        let mut parts = path.0.iter();
-        if_chain! {
-            if let Some(PathPart::Channel((_, channel), _, "plugins")) = parts.next();
-            if channel.name == "xfce4-panel";
-            if let Some(PathPart::Props((_, value), _, _)) = parts.next();
-            if let TypedValue::String(value) = &value.value;
-            if value == "launcher";
-            if let Some(PathPart::Props(_, _, "items")) = parts.next();
-            if parts.next().is_none();
-            then { return true; }
-        }
-        drop(parts);
-        false
-    })();
-    let mut self_elements = self_array.iter().enumerate();
-    let mut other_elements = other_array.iter();
-    let changed = self_elements
-        .by_ref()
-        .zip(other_elements.by_ref())
-        .filter_map(|((idx, self_element), other_element)| {
-            let path =
-                path.push(PathPart::Array(ctx, (self_array, other_array), idx));
-            let patch = self_element.diff_with_path(other_element, &path);
-            (!patch.is_empty()).then(|| (idx, patch))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let added = other_elements.cloned().collect::<Vec<_>>();
-    let removed = if remove_old {
-        self_elements
-            .map(|(idx, _self_element)| idx)
-            .collect::<BTreeSet<_>>()
-    } else {
-        BTreeSet::new()
-    };
     ArrayPatch {
-        changed,
-        added,
-        removed,
+        array: (self_array != other_array).then(|| other_array.to_owned()),
     }
 }
 
 impl diff::Patch for ArrayPatch<'_> {
     fn is_empty(&self) -> bool {
-        self.changed.is_empty()
-            && self.added.is_empty()
-            && self.removed.is_empty()
+        self.array.is_none()
     }
 }
 
@@ -443,11 +367,6 @@ enum PathPart<'a> {
         (&'a Channel<'a>, &'a Channel<'a>),
         (&'a Properties<'a>, &'a Properties<'a>),
         &'a str,
-    ),
-    Array(
-        (&'a Value<'a>, &'a Value<'a>),
-        (&'a [Value<'a>], &'a [Value<'a>]),
-        usize,
     ),
     Props(
         (&'a Value<'a>, &'a Value<'a>),
