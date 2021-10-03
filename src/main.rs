@@ -5,6 +5,8 @@ use anyhow::{Context, Result};
 use xfce_config::{XfceConfig, XfceConfigPatch};
 
 fn main() -> Result<()> {
+    let dry_run = true;
+
     let new_config = XfceConfig::from_json_reader(std::io::stdin())
         .context("error reading input JSON")?;
     dbg!(&new_config);
@@ -20,7 +22,7 @@ fn main() -> Result<()> {
     let diff = XfceConfigPatch::diff(&existing_config, &new_config);
     dbg!(&diff);
 
-    diff.apply().context("error applying config")?;
+    diff.apply(dry_run).context("error applying config")?;
 
     Ok(())
 }

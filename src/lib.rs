@@ -91,8 +91,9 @@ where
 }
 
 impl XfceConfigPatch<'_> {
-    pub fn apply(self) -> Result<()> {
-        self.channels.apply(&mut channel::ChannelsApplier::new()?)?;
+    pub fn apply(self, dry_run: bool) -> Result<()> {
+        self.channels
+            .apply(&mut channel::ChannelsApplier::new(dry_run)?)?;
         Ok(())
     }
 }

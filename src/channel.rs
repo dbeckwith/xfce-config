@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use quick_xml::{
     events::{attributes::Attribute, BytesDecl, BytesStart, Event},
     Reader,
@@ -799,84 +799,88 @@ where
     })
 }
 
-pub struct ChannelsApplier {}
-
-struct ApplyPathDisplay<'a, 'b>(&'b ApplyPath<'a>);
-
-impl fmt::Display for ApplyPathDisplay<'_, '_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0.channel)?;
-        for prop in &self.0.props {
-            write!(f, "/{}", prop)?;
-        }
-        Ok(())
-    }
-}
-
-struct ArrayDisplay<'a, 'b>(&'b Vec<Value<'a>>);
-
-impl fmt::Display for ArrayDisplay<'_, '_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct ValueDisplay<'a, 'b>(&'b Value<'a>);
-
-        impl fmt::Display for ValueDisplay<'_, '_> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                match &self.0.value {
-                    TypedValue::Bool(value) => write!(f, "{}", value),
-                    TypedValue::Int(value) => write!(f, "{}", value),
-                    TypedValue::Uint(value) => write!(f, "{}", value),
-                    TypedValue::Double(value) => write!(f, "{}", value),
-                    TypedValue::String(value) => write!(f, "{}", value),
-                    TypedValue::Array(array) => {
-                        write!(f, "{}", ArrayDisplay(array))
-                    },
-                    TypedValue::Empty => unreachable!(),
-                }
-            }
-        }
-
-        write!(f, "[")?;
-        let mut first = true;
-        for value in self
-            .0
-            .iter()
-            .filter(|value| !matches!(value.value, TypedValue::Empty))
-        {
-            if !first {
-                write!(f, ", ")?;
-            }
-            write!(f, "{}", ValueDisplay(value))?;
-            first = false;
-        }
-        write!(f, "]")?;
-        Ok(())
-    }
+pub struct ChannelsApplier {
+    dry_run: bool,
+    dbus: gio::DBusProxy,
 }
 
 impl ChannelsApplier {
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Result<Self> {
-        Ok(Self {})
+    pub fn new(dry_run: bool) -> Result<Self> {
+        let connection =
+            gio::bus_get_sync::<gio::Cancellable>(gio::BusType::Session, None)
+                .context("error getting bus")?;
+        let dbus = gio::DBusProxy::new_sync::<gio::Cancellable>(
+            &connection,
+            gio::DBusProxyFlags::NONE,
+            None,
+            Some("org.xfce.Xfconf"),
+            "/org/xfce/Xfconf",
+            "org.xfce.Xfconf",
+            None,
+        )
+        .context("error creating proxy")?;
+        Ok(Self { dry_run, dbus })
+    }
+
+    fn path_to_channel_property<'a>(
+        path: &'a ApplyPath<'_>,
+    ) -> (&'a str, String) {
+        (
+            &*path.channel,
+            path.props
+                .iter()
+                .map(|prop| format!("/{}", prop))
+                .collect::<String>(),
+        )
+    }
+
+    fn call(
+        &mut self,
+        method: &'static str,
+        args: impl glib::variant::ToVariant + fmt::Debug,
+    ) -> Result<()> {
+        let args = args.to_variant();
+        eprintln!("call {}{}", method, args.to_string());
+        if self.dry_run {
+            Ok(())
+        } else {
+            gio::prelude::DBusProxyExt::call_sync::<gio::Cancellable>(
+                &self.dbus,
+                method,
+                Some(&args),
+                gio::DBusCallFlags::NONE,
+                -1,
+                None,
+            )
+            .with_context(|| format!("{}{}", method, args.to_string()))
+            .map(|_| ())
+        }
+    }
+
+    fn set(
+        &mut self,
+        path: &ApplyPath<'_>,
+        value: glib::Variant,
+    ) -> Result<()> {
+        let (channel, property) = Self::path_to_channel_property(path);
+        self.call("SetProperty", &(channel, property, value))
     }
 
     fn set_bool(&mut self, path: &ApplyPath<'_>, b: bool) -> Result<()> {
-        eprintln!("set {} to {}", ApplyPathDisplay(path), b);
-        Ok(())
+        self.set(path, glib::variant::ToVariant::to_variant(&b))
     }
 
     fn set_int(&mut self, path: &ApplyPath<'_>, n: i32) -> Result<()> {
-        eprintln!("set {} to {}", ApplyPathDisplay(path), n);
-        Ok(())
+        self.set(path, glib::variant::ToVariant::to_variant(&n))
     }
 
     fn set_uint(&mut self, path: &ApplyPath<'_>, n: u32) -> Result<()> {
-        eprintln!("set {} to {}", ApplyPathDisplay(path), n);
-        Ok(())
+        self.set(path, glib::variant::ToVariant::to_variant(&n))
     }
 
     fn set_double(&mut self, path: &ApplyPath<'_>, f: f64) -> Result<()> {
-        eprintln!("set {} to {}", ApplyPathDisplay(path), f);
-        Ok(())
+        self.set(path, glib::variant::ToVariant::to_variant(&f))
     }
 
     fn set_string(
@@ -884,8 +888,7 @@ impl ChannelsApplier {
         path: &ApplyPath<'_>,
         s: Cow<'_, str>,
     ) -> Result<()> {
-        eprintln!("set {} to {}", ApplyPathDisplay(path), s);
-        Ok(())
+        self.set(path, glib::variant::ToVariant::to_variant(&*s))
     }
 
     fn set_array(
@@ -893,13 +896,42 @@ impl ChannelsApplier {
         path: &ApplyPath<'_>,
         array: Vec<Value<'_>>,
     ) -> Result<()> {
-        eprintln!("set {} to {}", ApplyPathDisplay(path), ArrayDisplay(&array));
-        Ok(())
+        self.set(
+            path,
+            glib::variant::ToVariant::to_variant(
+                &array
+                    .into_iter()
+                    .map(|value| match value.value {
+                        TypedValue::Bool(b) => {
+                            Ok(glib::variant::ToVariant::to_variant(&b))
+                        },
+                        TypedValue::Int(n) => {
+                            Ok(glib::variant::ToVariant::to_variant(&n))
+                        },
+                        TypedValue::Uint(n) => {
+                            Ok(glib::variant::ToVariant::to_variant(&n))
+                        },
+                        TypedValue::Double(f) => {
+                            Ok(glib::variant::ToVariant::to_variant(&f))
+                        },
+                        TypedValue::String(s) => {
+                            Ok(glib::variant::ToVariant::to_variant(&*s))
+                        },
+                        TypedValue::Array(_) => {
+                            Err(anyhow!("array value in array value"))
+                        },
+                        TypedValue::Empty => {
+                            Err(anyhow!("empty value in array value"))
+                        },
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+        )
     }
 
     fn remove(&mut self, path: &ApplyPath<'_>) -> Result<()> {
-        eprintln!("remove {}", ApplyPathDisplay(path));
-        Ok(())
+        let (channel, property) = Self::path_to_channel_property(path);
+        self.call("ResetProperty", &(channel, property, true))
     }
 }
 

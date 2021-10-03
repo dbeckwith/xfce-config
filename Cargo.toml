@@ -13,6 +13,8 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0.43"
 dirs2 = "3.0.1"
+gio = "0.14.6"
+glib = "0.14.5"
 if_chain = "1.0.2"
 im = "15.0.0"
 quick-xml = "0.22.0"
