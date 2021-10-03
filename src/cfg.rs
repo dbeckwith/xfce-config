@@ -6,7 +6,7 @@ use std::{
     io::{BufRead, Write},
 };
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct Cfg<'a> {
     #[serde(default)]
     pub root: BTreeMap<Cow<'a, str>, Cow<'a, str>>,
@@ -21,10 +21,10 @@ pub struct CfgPatch<'a> {
 }
 
 impl<'a> CfgPatch<'a> {
-    pub fn diff(old: &Cfg<'a>, new: &Cfg<'a>) -> Self {
+    pub fn diff(old: Cfg<'a>, new: Cfg<'a>) -> Self {
         Self {
-            root: MapPatch::diff(&old.root, &new.root),
-            sections: MapPatch::diff(&old.sections, &new.sections),
+            root: MapPatch::diff(old.root, new.root),
+            sections: MapPatch::diff(old.sections, new.sections),
         }
     }
 
@@ -36,7 +36,7 @@ impl<'a> CfgPatch<'a> {
 trait Patch {
     type Data;
 
-    fn diff(old: &Self::Data, new: &Self::Data) -> Self;
+    fn diff(old: Self::Data, new: Self::Data) -> Self;
 
     fn is_empty(&self) -> bool;
 }
@@ -53,21 +53,20 @@ where
 impl<'a, T> Patch for MapPatch<'a, T>
 where
     T: Patch,
-    T::Data: Clone,
 {
     type Data = BTreeMap<Cow<'a, str>, T::Data>;
 
-    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
+    fn diff(mut old: Self::Data, new: Self::Data) -> Self {
         let mut changed = BTreeMap::new();
         let mut added = BTreeMap::new();
-        for (key, new_value) in new.iter() {
-            if let Some(old_value) = old.get(key) {
+        for (key, new_value) in new.into_iter() {
+            if let Some(old_value) = old.remove(&key) {
                 let patch = T::diff(old_value, new_value);
                 if !patch.is_empty() {
-                    changed.insert(key.clone(), patch);
+                    changed.insert(key, patch);
                 }
             } else {
-                added.insert(key.clone(), new_value.clone());
+                added.insert(key, new_value);
             }
         }
         Self { changed, added }
@@ -86,9 +85,9 @@ struct StrPatch<'a> {
 impl<'a> Patch for StrPatch<'a> {
     type Data = Cow<'a, str>;
 
-    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
+    fn diff(old: Self::Data, new: Self::Data) -> Self {
         Self {
-            value: (old != new).then(|| new.clone()),
+            value: (old != new).then(|| new),
         }
     }
 

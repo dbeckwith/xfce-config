@@ -24,15 +24,12 @@ pub struct XfceConfigPatch<'a> {
 }
 
 impl<'a> XfceConfigPatch<'a> {
-    pub fn diff(old: &XfceConfig<'a>, new: &XfceConfig<'a>) -> Self {
+    pub fn diff(old: XfceConfig<'a>, new: XfceConfig<'a>) -> Self {
         XfceConfigPatch {
-            channels: channel::ChannelsPatch::diff(
-                &old.channels,
-                &new.channels,
-            ),
+            channels: channel::ChannelsPatch::diff(old.channels, new.channels),
             panel_plugin_configs: panel::PluginConfigsPatch::diff(
-                &old.panel_plugin_configs,
-                &new.panel_plugin_configs,
+                old.panel_plugin_configs,
+                new.panel_plugin_configs,
             ),
         }
     }

@@ -15,7 +15,7 @@ use std::{
 #[derive(Debug, Deserialize)]
 pub struct PluginConfigs<'a>(IdMap<PluginConfig<'a>>);
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct PluginConfig<'a> {
     plugin: PluginId<'a>,
     file: PluginConfigFile<'a>,
@@ -27,32 +27,32 @@ struct PluginId<'a> {
     id: u64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum PluginConfigFile<'a> {
     Rc(Cfg<'a>),
     DesktopDir(DesktopDir<'a>),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct DesktopDir<'a> {
     files: IdMap<DesktopFile<'a>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct DesktopFile<'a> {
     id: u64,
     content: DesktopFileContent<'a>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum DesktopFileContent<'a> {
     Cfg(Cfg<'a>),
     Link(Link<'a>),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Link<'a> {
     path: Cow<'a, Path>,
 }
@@ -60,7 +60,7 @@ struct Link<'a> {
 trait Patch {
     type Data;
 
-    fn diff(old: &Self::Data, new: &Self::Data) -> Self;
+    fn diff(old: Self::Data, new: Self::Data) -> Self;
 
     fn is_empty(&self) -> bool;
 }
@@ -80,28 +80,23 @@ impl<K, V> Patch for MapPatch<K, V>
 where
     K: Clone + Ord,
     V: Patch,
-    V::Data: Clone,
 {
     type Data = BTreeMap<K, V::Data>;
 
-    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
+    fn diff(mut old: Self::Data, new: Self::Data) -> Self {
         let mut changed = BTreeMap::new();
         let mut added = BTreeMap::new();
-        for (key, new_value) in new.iter() {
-            if let Some(old_value) = old.get(key) {
+        for (key, new_value) in new.into_iter() {
+            if let Some(old_value) = old.remove(&key) {
                 let patch = V::diff(old_value, new_value);
                 if !patch.is_empty() {
-                    changed.insert(key.clone(), patch);
+                    changed.insert(key, patch);
                 }
             } else {
-                added.insert(key.clone(), new_value.clone());
+                added.insert(key, new_value);
             }
         }
-        let removed = old
-            .keys()
-            .cloned()
-            .filter(|key| !new.contains_key(key))
-            .collect::<BTreeSet<_>>();
+        let removed = old.into_keys().collect::<BTreeSet<_>>();
         Self {
             changed,
             added,
@@ -120,8 +115,8 @@ pub struct PluginConfigsPatch<'a>(
 );
 
 impl<'a> PluginConfigsPatch<'a> {
-    pub fn diff(old: &PluginConfigs<'a>, new: &PluginConfigs<'a>) -> Self {
-        Self(MapPatch::diff(&(old.0).0, &(new.0).0))
+    pub fn diff(old: PluginConfigs<'a>, new: PluginConfigs<'a>) -> Self {
+        Self(MapPatch::diff((old.0).0, (new.0).0))
     }
 }
 
@@ -135,19 +130,32 @@ enum PluginConfigPatch<'a> {
 impl<'a> Patch for PluginConfigPatch<'a> {
     type Data = PluginConfig<'a>;
 
-    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
-        match (&old.file, &new.file) {
-            (PluginConfigFile::Rc(old_rc), PluginConfigFile::Rc(new_rc)) => {
-                Self::Rc(new.plugin.clone(), CfgPatch::diff(old_rc, new_rc))
-            },
+    fn diff(old: Self::Data, new: Self::Data) -> Self {
+        match (old, new) {
             (
-                PluginConfigFile::DesktopDir(old_desktop_dir),
-                PluginConfigFile::DesktopDir(new_desktop_dir),
+                PluginConfig {
+                    plugin: _,
+                    file: PluginConfigFile::Rc(old_rc),
+                },
+                PluginConfig {
+                    plugin,
+                    file: PluginConfigFile::Rc(new_rc),
+                },
+            ) => Self::Rc(plugin, CfgPatch::diff(old_rc, new_rc)),
+            (
+                PluginConfig {
+                    plugin: _,
+                    file: PluginConfigFile::DesktopDir(old_desktop_dir),
+                },
+                PluginConfig {
+                    plugin,
+                    file: PluginConfigFile::DesktopDir(new_desktop_dir),
+                },
             ) => Self::DesktopDir(
-                new.plugin.clone(),
+                plugin,
                 DesktopDirPatch::diff(old_desktop_dir, new_desktop_dir),
             ),
-            _ => Self::Changed(new.clone()),
+            (_old, new) => Self::Changed(new),
         }
     }
 
@@ -168,8 +176,8 @@ struct DesktopDirPatch<'a>(MapPatch<u64, DesktopFilePatch<'a>>);
 impl<'a> Patch for DesktopDirPatch<'a> {
     type Data = DesktopDir<'a>;
 
-    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
-        Self(MapPatch::diff(&old.files.0, &new.files.0))
+    fn diff(old: Self::Data, new: Self::Data) -> Self {
+        Self(MapPatch::diff(old.files.0, new.files.0))
     }
 
     fn is_empty(&self) -> bool {
@@ -187,17 +195,29 @@ enum DesktopFilePatch<'a> {
 impl<'a> Patch for DesktopFilePatch<'a> {
     type Data = DesktopFile<'a>;
 
-    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
-        match (&old.content, &new.content) {
+    fn diff(old: Self::Data, new: Self::Data) -> Self {
+        match (old, new) {
             (
-                DesktopFileContent::Cfg(old_cfg),
-                DesktopFileContent::Cfg(new_cfg),
-            ) => Self::Cfg(new.id, CfgPatch::diff(old_cfg, new_cfg)),
+                DesktopFile {
+                    id: _,
+                    content: DesktopFileContent::Cfg(old_cfg),
+                },
+                DesktopFile {
+                    id,
+                    content: DesktopFileContent::Cfg(new_cfg),
+                },
+            ) => Self::Cfg(id, CfgPatch::diff(old_cfg, new_cfg)),
             (
-                DesktopFileContent::Link(old_link),
-                DesktopFileContent::Link(new_link),
-            ) => Self::Link(new.id, LinkPatch::diff(old_link, new_link)),
-            _ => Self::Changed(new.clone()),
+                DesktopFile {
+                    id: _,
+                    content: DesktopFileContent::Link(old_link),
+                },
+                DesktopFile {
+                    id,
+                    content: DesktopFileContent::Link(new_link),
+                },
+            ) => Self::Link(id, LinkPatch::diff(old_link, new_link)),
+            (_old, new) => Self::Changed(new),
         }
     }
 
@@ -218,9 +238,9 @@ struct LinkPatch<'a> {
 impl<'a> Patch for LinkPatch<'a> {
     type Data = Link<'a>;
 
-    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
+    fn diff(old: Self::Data, new: Self::Data) -> Self {
         Self {
-            value: (old.path != new.path).then(|| new.path.clone()),
+            value: (old.path != new.path).then(|| new.path),
         }
     }
 
