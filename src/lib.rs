@@ -62,7 +62,11 @@ impl XfceConfig<'static> {
 impl XfceConfigPatch<'_> {
     pub fn apply(self, dry_run: bool) -> Result<()> {
         self.channels
-            .apply(&mut channel::ChannelsApplier::new(dry_run)?)?;
+            .apply(
+                &mut channel::Applier::new(dry_run)
+                    .context("error creating channels applier")?,
+            )
+            .context("error applying channels")?;
         Ok(())
     }
 }

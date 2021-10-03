@@ -798,12 +798,12 @@ where
     })
 }
 
-pub struct ChannelsApplier {
+pub struct Applier {
     dry_run: bool,
     dbus: gio::DBusProxy,
 }
 
-impl ChannelsApplier {
+impl Applier {
     #[allow(clippy::new_without_default)]
     pub fn new(dry_run: bool) -> Result<Self> {
         let dbus = gio::DBusProxy::for_bus_sync::<gio::Cancellable>(
@@ -932,7 +932,7 @@ impl ChannelsApplier {
 }
 
 impl ChannelsPatch<'_> {
-    pub fn apply(self, applier: &mut ChannelsApplier) -> Result<()> {
+    pub fn apply(self, applier: &mut Applier) -> Result<()> {
         for (name, channel_patch) in self.changed {
             channel_patch.apply(applier, name)?;
         }
@@ -958,7 +958,7 @@ impl<'a> ApplyPath<'a> {
 }
 
 impl Channel<'_> {
-    fn apply(self, applier: &mut ChannelsApplier) -> Result<()> {
+    fn apply(self, applier: &mut Applier) -> Result<()> {
         let path = ApplyPath {
             channel: self.name,
             props: im::Vector::new(),
@@ -969,11 +969,7 @@ impl Channel<'_> {
 }
 
 impl<'a> Properties<'a> {
-    fn apply(
-        self,
-        applier: &mut ChannelsApplier,
-        path: &ApplyPath<'a>,
-    ) -> Result<()> {
+    fn apply(self, applier: &mut Applier, path: &ApplyPath<'a>) -> Result<()> {
         for (name, value) in self.0 {
             let path = path.push(name);
             value.apply(applier, &path)?;
@@ -983,11 +979,7 @@ impl<'a> Properties<'a> {
 }
 
 impl<'a> Value<'a> {
-    fn apply(
-        self,
-        applier: &mut ChannelsApplier,
-        path: &ApplyPath<'a>,
-    ) -> Result<()> {
+    fn apply(self, applier: &mut Applier, path: &ApplyPath<'a>) -> Result<()> {
         self.value.apply(applier, path)?;
         self.props.apply(applier, path)?;
         Ok(())
@@ -995,11 +987,7 @@ impl<'a> Value<'a> {
 }
 
 impl<'a> TypedValue<'a> {
-    fn apply(
-        self,
-        applier: &mut ChannelsApplier,
-        path: &ApplyPath<'a>,
-    ) -> Result<()> {
+    fn apply(self, applier: &mut Applier, path: &ApplyPath<'a>) -> Result<()> {
         match self {
             Self::Bool(value) => applier.set_bool(path, value),
             Self::Int(value) => applier.set_int(path, value),
@@ -1013,11 +1001,7 @@ impl<'a> TypedValue<'a> {
 }
 
 impl<'a> ChannelPatch<'a> {
-    fn apply(
-        self,
-        applier: &mut ChannelsApplier,
-        name: Cow<'a, str>,
-    ) -> Result<()> {
+    fn apply(self, applier: &mut Applier, name: Cow<'a, str>) -> Result<()> {
         let path = ApplyPath {
             channel: name,
             props: im::Vector::new(),
@@ -1028,11 +1012,7 @@ impl<'a> ChannelPatch<'a> {
 }
 
 impl<'a> PropertiesPatch<'a> {
-    fn apply(
-        self,
-        applier: &mut ChannelsApplier,
-        path: &ApplyPath<'a>,
-    ) -> Result<()> {
+    fn apply(self, applier: &mut Applier, path: &ApplyPath<'a>) -> Result<()> {
         // keys of changed, added, removed are disjoint so order doesn't matter
         for (name, value_patch) in self.changed {
             let path = path.push(name);
@@ -1051,11 +1031,7 @@ impl<'a> PropertiesPatch<'a> {
 }
 
 impl<'a> ValuePatch<'a> {
-    fn apply(
-        self,
-        applier: &mut ChannelsApplier,
-        path: &ApplyPath<'a>,
-    ) -> Result<()> {
+    fn apply(self, applier: &mut Applier, path: &ApplyPath<'a>) -> Result<()> {
         self.value.apply(applier, path)?;
         self.props.apply(applier, path)?;
         Ok(())
@@ -1063,11 +1039,7 @@ impl<'a> ValuePatch<'a> {
 }
 
 impl<'a> TypedValuePatch<'a> {
-    fn apply(
-        self,
-        applier: &mut ChannelsApplier,
-        path: &ApplyPath<'a>,
-    ) -> Result<()> {
+    fn apply(self, applier: &mut Applier, path: &ApplyPath<'a>) -> Result<()> {
         match self {
             Self::Bool(value_patch) => value_patch.apply(applier, path),
             Self::Int(value_patch) => value_patch.apply(applier, path),
@@ -1086,7 +1058,7 @@ macro_rules! impl_simple_patch_apply {
         impl SimplePatch<$ty> {
             fn apply(
                 self,
-                applier: &mut ChannelsApplier,
+                applier: &mut Applier,
                 path: &ApplyPath<'_>,
             ) -> Result<()> {
                 if let Some(value) = self.value {
