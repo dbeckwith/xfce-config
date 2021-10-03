@@ -5,12 +5,20 @@ use quick_xml::{
     Reader,
     Writer,
 };
-use serde::Deserialize;
+use serde::{de, Deserialize};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
+    fs,
+    io,
     io::{BufRead, Write},
 };
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Channels<'a>(
+    #[serde(deserialize_with = "de_channels")]
+    BTreeMap<Cow<'a, str>, Channel<'a>>,
+);
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Channel<'a> {
@@ -115,6 +123,39 @@ impl<'a> Value<'a> {
             value: TypedValue::Empty,
             props,
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct ChannelsPatch<'a> {
+    changed: BTreeMap<Cow<'a, str>, ChannelPatch<'a>>,
+    added: BTreeMap<Cow<'a, str>, Channel<'a>>,
+}
+
+impl<'a> diff::Diff for Channels<'a> {
+    type Patch = ChannelsPatch<'a>;
+
+    fn diff(&self, other: &Self) -> Self::Patch {
+        use diff::Patch;
+        let mut changed = BTreeMap::new();
+        let mut added = BTreeMap::new();
+        for (key, other_value) in other.0.iter() {
+            if let Some(self_value) = self.0.get(key) {
+                let patch = self_value.diff(other_value);
+                if !patch.is_empty() {
+                    changed.insert(key.clone(), patch);
+                }
+            } else {
+                added.insert(key.clone(), other_value.clone());
+            }
+        }
+        ChannelsPatch { changed, added }
+    }
+}
+
+impl diff::Patch for ChannelsPatch<'_> {
+    fn is_empty(&self) -> bool {
+        self.changed.is_empty() && self.added.is_empty()
     }
 }
 
@@ -384,6 +425,29 @@ impl<'a> Path<'a> {
         let mut path = self.clone();
         path.0.push_back(part);
         path
+    }
+}
+
+impl Channels<'_> {
+    pub fn read(dir: &std::path::Path) -> Result<Self> {
+        dir.read_dir()
+            .context("error reading channels dir")?
+            .map(|entry| {
+                let entry = entry.context("error reading dir entry")?;
+                let path = entry.path();
+                let file = fs::File::open(path)
+                    .context("error opening channel XML file")?;
+                let reader = io::BufReader::new(file);
+                let channel = Channel::read_xml(reader)
+                    .context("error reading channel XML")?;
+                Ok(channel)
+            })
+            .map(|channel| {
+                channel.map(|channel| (channel.name.clone(), channel))
+            })
+            .collect::<Result<BTreeMap<_, _>>>()
+            .map(Self)
+            .context("error loading channels data")
     }
 }
 
@@ -818,6 +882,20 @@ impl Channel<'_> {
 
         Ok(())
     }
+}
+
+fn de_channels<'a, 'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<Cow<'a, str>, Channel<'a>>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    Vec::<Channel<'_>>::deserialize(deserializer).map(|channels| {
+        channels
+            .into_iter()
+            .map(|channel| (channel.name.clone(), channel))
+            .collect::<BTreeMap<_, _>>()
+    })
 }
 
 #[cfg(test)]
