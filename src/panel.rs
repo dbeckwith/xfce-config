@@ -151,13 +151,16 @@ impl PluginConfig<'static> {
                 .map(IdMap)
                 .context("error loading desktop files")?;
             PluginConfigFile::DesktopDir(DesktopDir { files })
-        } else {
-            // TODO: check that extension is .rc?
+        } else if path.extension().and_then(std::ffi::OsStr::to_str)
+            == Some("rc")
+        {
             let file =
                 fs::File::open(path).context("error opening plugin RC file")?;
             let reader = io::BufReader::new(file);
             let cfg = Cfg::read(reader).context("error reading plugin RC")?;
             PluginConfigFile::Rc(cfg)
+        } else {
+            return Ok(None);
         };
 
         Ok(Some(PluginConfig { id, file }))
