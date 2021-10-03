@@ -4,50 +4,76 @@ use serde::{de, Deserialize};
 use std::{borrow::Cow, collections::BTreeMap, fs, io, path::Path};
 
 #[derive(Debug, Deserialize)]
-pub struct PluginConfig<'a> {
-    pub plugin: PluginId<'a>,
-    pub file: PluginConfigFile<'a>,
+pub struct PluginConfigs<'a>(
+    #[serde(deserialize_with = "de_plugin_configs")]
+    BTreeMap<PluginId<'a>, PluginConfig<'a>>,
+);
+
+#[derive(Debug, Deserialize)]
+struct PluginConfig<'a> {
+    plugin: PluginId<'a>,
+    file: PluginConfigFile<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
-pub struct PluginId<'a> {
-    pub r#type: Cow<'a, str>,
-    pub id: u64,
+struct PluginId<'a> {
+    r#type: Cow<'a, str>,
+    id: u64,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-pub enum PluginConfigFile<'a> {
+enum PluginConfigFile<'a> {
     Rc(Cfg<'a>),
     DesktopDir(DesktopDir<'a>),
 }
 
 #[derive(Debug, Deserialize)]
-pub struct DesktopDir<'a> {
+struct DesktopDir<'a> {
     #[serde(deserialize_with = "de_desktop_dir_files")]
-    pub files: BTreeMap<u64, DesktopFile<'a>>,
+    files: BTreeMap<u64, DesktopFile<'a>>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct DesktopFile<'a> {
-    pub id: u64,
-    pub content: DesktopFileContent<'a>,
+struct DesktopFile<'a> {
+    id: u64,
+    content: DesktopFileContent<'a>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-pub enum DesktopFileContent<'a> {
+enum DesktopFileContent<'a> {
     Cfg(Cfg<'a>),
     Link(Link<'a>),
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Link<'a> {
-    pub path: Cow<'a, Path>,
+struct Link<'a> {
+    path: Cow<'a, Path>,
+}
+
+impl PluginConfigs<'static> {
+    pub fn read(dir: &Path) -> Result<Self> {
+        dir.read_dir()
+            .context("error reading dir")?
+            .map(|entry| {
+                let entry = entry.context("error reading dir entry")?;
+                let path = entry.path();
+                PluginConfig::read(&path)
+            })
+            .filter_map(Result::transpose)
+            .map(|plugin_config| {
+                plugin_config.map(|plugin_config| {
+                    (plugin_config.plugin.clone(), plugin_config)
+                })
+            })
+            .collect::<Result<BTreeMap<_, _>>>()
+            .map(Self)
+    }
 }
 
 impl PluginConfig<'static> {
-    pub fn from_path(path: &Path) -> Result<Option<Self>> {
+    fn read(path: &Path) -> Result<Option<Self>> {
         let plugin = (|| {
             let file_name = path.file_stem()?;
             let file_name = file_name.to_str()?;
@@ -119,6 +145,20 @@ impl PluginConfig<'static> {
 
         Ok(Some(PluginConfig { file, plugin }))
     }
+}
+
+fn de_plugin_configs<'a, 'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<PluginId<'a>, PluginConfig<'a>>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    Vec::<PluginConfig<'_>>::deserialize(deserializer).map(|plugin_configs| {
+        plugin_configs
+            .into_iter()
+            .map(|plugin_config| (plugin_config.plugin.clone(), plugin_config))
+            .collect::<BTreeMap<_, _>>()
+    })
 }
 
 fn de_desktop_dir_files<'a, 'de, D>(

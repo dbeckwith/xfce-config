@@ -331,7 +331,7 @@ impl<'a> DiffPath<'a> {
 impl Channels<'_> {
     pub fn read(dir: &Path) -> Result<Self> {
         dir.read_dir()
-            .context("error reading channels dir")?
+            .context("error reading dir")?
             .map(|entry| {
                 let entry = entry.context("error reading dir entry")?;
                 let path = entry.path();
@@ -347,7 +347,6 @@ impl Channels<'_> {
             })
             .collect::<Result<BTreeMap<_, _>>>()
             .map(Self)
-            .context("error loading channels data")
     }
 }
 
