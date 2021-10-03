@@ -1,13 +1,10 @@
-use crate::cfg::Cfg;
+use crate::{cfg::Cfg, serde::IdMap};
 use anyhow::{Context, Result};
-use serde::{de, Deserialize};
+use serde::Deserialize;
 use std::{borrow::Cow, collections::BTreeMap, fs, io, path::Path};
 
 #[derive(Debug, Deserialize)]
-pub struct PluginConfigs<'a>(
-    #[serde(deserialize_with = "de_plugin_configs")]
-    BTreeMap<PluginId<'a>, PluginConfig<'a>>,
-);
+pub struct PluginConfigs<'a>(IdMap<PluginConfig<'a>>);
 
 #[derive(Debug, Deserialize)]
 struct PluginConfig<'a> {
@@ -30,8 +27,7 @@ enum PluginConfigFile<'a> {
 
 #[derive(Debug, Deserialize)]
 struct DesktopDir<'a> {
-    #[serde(deserialize_with = "de_desktop_dir_files")]
-    files: BTreeMap<u64, DesktopFile<'a>>,
+    files: IdMap<DesktopFile<'a>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,6 +64,7 @@ impl PluginConfigs<'static> {
                 })
             })
             .collect::<Result<BTreeMap<_, _>>>()
+            .map(IdMap)
             .map(Self)
     }
 }
@@ -133,6 +130,7 @@ impl PluginConfig<'static> {
                 })
                 .filter_map(Result::transpose)
                 .collect::<Result<BTreeMap<_, _>>>()
+                .map(IdMap)
                 .context("error loading desktop files")?;
             PluginConfigFile::DesktopDir(DesktopDir { files })
         } else {
@@ -147,29 +145,18 @@ impl PluginConfig<'static> {
     }
 }
 
-fn de_plugin_configs<'a, 'de, D>(
-    deserializer: D,
-) -> Result<BTreeMap<PluginId<'a>, PluginConfig<'a>>, D::Error>
-where
-    D: de::Deserializer<'de>,
-{
-    Vec::<PluginConfig<'_>>::deserialize(deserializer).map(|plugin_configs| {
-        plugin_configs
-            .into_iter()
-            .map(|plugin_config| (plugin_config.plugin.clone(), plugin_config))
-            .collect::<BTreeMap<_, _>>()
-    })
+impl<'a> crate::serde::Id for PluginConfig<'a> {
+    type Id = PluginId<'a>;
+
+    fn id(&self) -> &Self::Id {
+        &self.plugin
+    }
 }
 
-fn de_desktop_dir_files<'a, 'de, D>(
-    deserializer: D,
-) -> Result<BTreeMap<u64, DesktopFile<'a>>, D::Error>
-where
-    D: de::Deserializer<'de>,
-{
-    let files = Vec::<DesktopFile<'_>>::deserialize(deserializer)?;
-    Ok(files
-        .into_iter()
-        .map(|file| (file.id, file))
-        .collect::<BTreeMap<_, _>>())
+impl crate::serde::Id for DesktopFile<'_> {
+    type Id = u64;
+
+    fn id(&self) -> &Self::Id {
+        &self.id
+    }
 }

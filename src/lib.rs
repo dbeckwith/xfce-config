@@ -4,9 +4,10 @@
 pub mod cfg;
 pub mod channel;
 pub mod panel;
+mod serde;
 
+use ::serde::Deserialize;
 use anyhow::{Context, Result};
-use serde::Deserialize;
 use std::{io::Read, path::Path};
 
 #[derive(Debug, Deserialize)]

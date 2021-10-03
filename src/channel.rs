@@ -1,10 +1,11 @@
+use crate::serde::IdMap;
 use anyhow::{anyhow, bail, Context, Result};
 use quick_xml::{
     events::{attributes::Attribute, BytesDecl, BytesStart, Event},
     Reader,
     Writer,
 };
-use serde::{de, Deserialize};
+use serde::Deserialize;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
@@ -16,10 +17,7 @@ use std::{
 };
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Channels<'a>(
-    #[serde(deserialize_with = "de_channels")]
-    BTreeMap<Cow<'a, str>, Channel<'a>>,
-);
+pub struct Channels<'a>(IdMap<Channel<'a>>);
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 struct Channel<'a> {
@@ -62,8 +60,8 @@ impl<'a> ChannelsPatch<'a> {
     pub fn diff(old: &Channels<'a>, new: &Channels<'a>) -> Self {
         let mut changed = BTreeMap::new();
         let mut added = Vec::new();
-        for (key, new_value) in new.0.iter() {
-            if let Some(old_value) = old.0.get(key) {
+        for (key, new_value) in (new.0).0.iter() {
+            if let Some(old_value) = (old.0).0.get(key) {
                 let patch = ChannelPatch::diff(old_value, new_value);
                 if !patch.is_empty() {
                     changed.insert(key.clone(), patch);
@@ -346,6 +344,7 @@ impl Channels<'_> {
                 channel.map(|channel| (channel.name.clone(), channel))
             })
             .collect::<Result<BTreeMap<_, _>>>()
+            .map(IdMap)
             .map(Self)
     }
 }
@@ -784,18 +783,12 @@ impl Channel<'_> {
     }
 }
 
-fn de_channels<'a, 'de, D>(
-    deserializer: D,
-) -> Result<BTreeMap<Cow<'a, str>, Channel<'a>>, D::Error>
-where
-    D: de::Deserializer<'de>,
-{
-    Vec::<Channel<'_>>::deserialize(deserializer).map(|channels| {
-        channels
-            .into_iter()
-            .map(|channel| (channel.name.clone(), channel))
-            .collect::<BTreeMap<_, _>>()
-    })
+impl<'a> crate::serde::Id for Channel<'a> {
+    type Id = Cow<'a, str>;
+
+    fn id(&self) -> &Self::Id {
+        &self.name
+    }
 }
 
 pub struct Applier {
@@ -849,8 +842,8 @@ impl Applier {
                 -1,
                 None,
             )
-            .with_context(|| format!("{}{}", method, args.to_string()))
             .map(|_| ())
+            .with_context(|| format!("{}{}", method, args.to_string()))
         }
     }
 
