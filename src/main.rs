@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     let diff = XfceConfigPatch::diff(&existing_config, &new_config);
     dbg!(&diff);
 
-    // diff.apply(xfconf);
+    diff.apply().context("error applying config")?;
 
     Ok(())
 }

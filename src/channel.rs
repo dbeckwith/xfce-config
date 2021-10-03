@@ -8,9 +8,11 @@ use serde::{de, Deserialize};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
+    fmt,
     fs,
     io,
     io::{BufRead, Write},
+    path::Path,
 };
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -53,13 +55,13 @@ enum TypedValue<'a> {
 #[derive(Debug)]
 pub struct ChannelsPatch<'a> {
     changed: BTreeMap<Cow<'a, str>, ChannelPatch<'a>>,
-    added: BTreeMap<Cow<'a, str>, Channel<'a>>,
+    added: Vec<Channel<'a>>,
 }
 
 impl<'a> ChannelsPatch<'a> {
     pub fn diff(old: &Channels<'a>, new: &Channels<'a>) -> Self {
         let mut changed = BTreeMap::new();
-        let mut added = BTreeMap::new();
+        let mut added = Vec::new();
         for (key, new_value) in new.0.iter() {
             if let Some(old_value) = old.0.get(key) {
                 let patch = ChannelPatch::diff(old_value, new_value);
@@ -67,7 +69,7 @@ impl<'a> ChannelsPatch<'a> {
                     changed.insert(key.clone(), patch);
                 }
             } else {
-                added.insert(key.clone(), new_value.clone());
+                added.push(new_value.clone());
             }
         }
         Self { changed, added }
@@ -93,7 +95,7 @@ impl<'a> ChannelPatch<'a> {
             props: PropertiesPatch::diff(
                 &old.props,
                 &new.props,
-                &Path::new(),
+                &DiffPath::new(),
                 PropertiesCtx::Channel(old, new),
             ),
         }
@@ -120,7 +122,7 @@ impl<'a> PropertiesPatch<'a> {
     fn diff<'b, 'p>(
         old: &'b Properties<'a>,
         new: &'b Properties<'a>,
-        path: &'p Path<'b>,
+        path: &'p DiffPath<'b>,
         ctx: PropertiesCtx<'a, 'b>,
     ) -> Self {
         let remove_old = (|| {
@@ -128,7 +130,7 @@ impl<'a> PropertiesPatch<'a> {
             // remove old panels
             let mut parts = path.0.iter();
             if_chain! {
-                if let Some(PathPart::Channel((_, channel), _, "panels")) = parts.next();
+                if let Some(DiffPathPart::Channel((_, channel), _, "panels")) = parts.next();
                 if channel.name == "xfce4-panel";
                 if parts.next().is_none();
                 then { return true; }
@@ -137,7 +139,7 @@ impl<'a> PropertiesPatch<'a> {
             // remove old plugins
             let mut parts = path.0.iter();
             if_chain! {
-                if let Some(PathPart::Channel((_, channel), _, "plugins")) = parts.next();
+                if let Some(DiffPathPart::Channel((_, channel), _, "plugins")) = parts.next();
                 if channel.name == "xfce4-panel";
                 if parts.next().is_none();
                 then { return true; }
@@ -146,9 +148,9 @@ impl<'a> PropertiesPatch<'a> {
             // remove old props when plugin type changes
             let mut parts = path.0.iter();
             if_chain! {
-                if let Some(PathPart::Channel((_, channel), _, "plugins")) = parts.next();
+                if let Some(DiffPathPart::Channel((_, channel), _, "plugins")) = parts.next();
                 if channel.name == "xfce4-panel";
-                if let Some(PathPart::Props(_, _, _)) = parts.next();
+                if let Some(DiffPathPart::Props(_, _, _)) = parts.next();
                 if parts.next().is_none();
                 if let PropertiesCtx::Value(old_ctx, new_ctx) = ctx;
                 if old_ctx.value != new_ctx.value;
@@ -163,10 +165,14 @@ impl<'a> PropertiesPatch<'a> {
             if let Some(old_value) = old.0.get(key) {
                 let path = path.push(match ctx {
                     PropertiesCtx::Channel(old_ctx, new_ctx) => {
-                        PathPart::Channel((old_ctx, new_ctx), (old, new), key)
+                        DiffPathPart::Channel(
+                            (old_ctx, new_ctx),
+                            (old, new),
+                            key,
+                        )
                     },
                     PropertiesCtx::Value(old_ctx, new_ctx) => {
-                        PathPart::Props((old_ctx, new_ctx), (old, new), key)
+                        DiffPathPart::Props((old_ctx, new_ctx), (old, new), key)
                     },
                 });
                 let patch = ValuePatch::diff(old_value, new_value, &path);
@@ -210,7 +216,7 @@ impl<'a> ValuePatch<'a> {
     fn diff<'b, 'p>(
         old: &'b Value<'a>,
         new: &'b Value<'a>,
-        path: &'p Path<'b>,
+        path: &'p DiffPath<'b>,
     ) -> Self {
         Self {
             value: TypedValuePatch::diff(&old.value, &new.value),
@@ -302,11 +308,12 @@ where
     }
 }
 
+// TODO: optimize to fact that channel is always first
 #[derive(Debug, Clone)]
-struct Path<'a>(im::Vector<PathPart<'a>>);
+struct DiffPath<'a>(im::Vector<DiffPathPart<'a>>);
 
 #[derive(Debug, Clone, Copy)]
-enum PathPart<'a> {
+enum DiffPathPart<'a> {
     Channel(
         (&'a Channel<'a>, &'a Channel<'a>),
         (&'a Properties<'a>, &'a Properties<'a>),
@@ -319,12 +326,12 @@ enum PathPart<'a> {
     ),
 }
 
-impl<'a> Path<'a> {
+impl<'a> DiffPath<'a> {
     fn new() -> Self {
         Self(im::Vector::new())
     }
 
-    fn push(&self, part: PathPart<'a>) -> Self {
+    fn push(&self, part: DiffPathPart<'a>) -> Self {
         let mut path = self.clone();
         path.0.push_back(part);
         path
@@ -332,7 +339,7 @@ impl<'a> Path<'a> {
 }
 
 impl Channels<'_> {
-    pub fn read(dir: &std::path::Path) -> Result<Self> {
+    pub fn read(dir: &Path) -> Result<Self> {
         dir.read_dir()
             .context("error reading channels dir")?
             .map(|entry| {
@@ -705,12 +712,12 @@ impl Channel<'_> {
                         value: s.as_bytes().into(),
                     });
                 },
-                TypedValue::Array(_items) => {},
+                TypedValue::Array(_array) => {},
                 TypedValue::Empty => {},
             }
 
             let sub_values = match value {
-                TypedValue::Array(items) => items.as_slice(),
+                TypedValue::Array(array) => array.as_slice(),
                 _ => &[],
             };
 
@@ -801,6 +808,284 @@ where
             .collect::<BTreeMap<_, _>>()
     })
 }
+
+pub struct ChannelsApplier {}
+
+struct ApplyPathDisplay<'a, 'b>(&'b ApplyPath<'a>);
+
+impl fmt::Display for ApplyPathDisplay<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.channel)?;
+        for prop in &self.0.props {
+            write!(f, "/{}", prop)?;
+        }
+        Ok(())
+    }
+}
+
+struct ArrayDisplay<'a, 'b>(&'b Vec<Value<'a>>);
+
+impl fmt::Display for ArrayDisplay<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct ValueDisplay<'a, 'b>(&'b Value<'a>);
+
+        impl fmt::Display for ValueDisplay<'_, '_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match &self.0.value {
+                    TypedValue::Bool(value) => write!(f, "{}", value),
+                    TypedValue::Int(value) => write!(f, "{}", value),
+                    TypedValue::Uint(value) => write!(f, "{}", value),
+                    TypedValue::Double(value) => write!(f, "{}", value),
+                    TypedValue::String(value) => write!(f, "{}", value),
+                    TypedValue::Array(array) => {
+                        write!(f, "{}", ArrayDisplay(array))
+                    },
+                    TypedValue::Empty => unreachable!(),
+                }
+            }
+        }
+
+        write!(f, "[")?;
+        let mut first = true;
+        for value in self
+            .0
+            .iter()
+            .filter(|value| !matches!(value.value, TypedValue::Empty))
+        {
+            if !first {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", ValueDisplay(value))?;
+            first = false;
+        }
+        write!(f, "]")?;
+        Ok(())
+    }
+}
+
+impl ChannelsApplier {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Result<Self> {
+        Ok(Self {})
+    }
+
+    fn set_bool(&mut self, path: &ApplyPath<'_>, b: bool) -> Result<()> {
+        eprintln!("set {} to {}", ApplyPathDisplay(path), b);
+        Ok(())
+    }
+
+    fn set_int(&mut self, path: &ApplyPath<'_>, n: i32) -> Result<()> {
+        eprintln!("set {} to {}", ApplyPathDisplay(path), n);
+        Ok(())
+    }
+
+    fn set_uint(&mut self, path: &ApplyPath<'_>, n: u32) -> Result<()> {
+        eprintln!("set {} to {}", ApplyPathDisplay(path), n);
+        Ok(())
+    }
+
+    fn set_double(&mut self, path: &ApplyPath<'_>, f: f64) -> Result<()> {
+        eprintln!("set {} to {}", ApplyPathDisplay(path), f);
+        Ok(())
+    }
+
+    fn set_string(
+        &mut self,
+        path: &ApplyPath<'_>,
+        s: Cow<'_, str>,
+    ) -> Result<()> {
+        eprintln!("set {} to {}", ApplyPathDisplay(path), s);
+        Ok(())
+    }
+
+    fn set_array(
+        &mut self,
+        path: &ApplyPath<'_>,
+        array: Vec<Value<'_>>,
+    ) -> Result<()> {
+        eprintln!("set {} to {}", ApplyPathDisplay(path), ArrayDisplay(&array));
+        Ok(())
+    }
+
+    fn remove(&mut self, path: &ApplyPath<'_>) -> Result<()> {
+        eprintln!("remove {}", ApplyPathDisplay(path));
+        Ok(())
+    }
+}
+
+impl ChannelsPatch<'_> {
+    pub fn apply(self, applier: &mut ChannelsApplier) -> Result<()> {
+        for (name, channel_patch) in self.changed {
+            channel_patch.apply(applier, name)?;
+        }
+        for channel in self.added {
+            channel.apply(applier)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ApplyPath<'a> {
+    channel: Cow<'a, str>,
+    props: im::Vector<Cow<'a, str>>,
+}
+
+impl<'a> ApplyPath<'a> {
+    fn push(&self, prop: Cow<'a, str>) -> Self {
+        let mut path = self.clone();
+        path.props.push_back(prop);
+        path
+    }
+}
+
+impl Channel<'_> {
+    fn apply(self, applier: &mut ChannelsApplier) -> Result<()> {
+        let path = ApplyPath {
+            channel: self.name,
+            props: im::Vector::new(),
+        };
+        self.props.apply(applier, &path)?;
+        Ok(())
+    }
+}
+
+impl<'a> Properties<'a> {
+    fn apply(
+        self,
+        applier: &mut ChannelsApplier,
+        path: &ApplyPath<'a>,
+    ) -> Result<()> {
+        for (name, value) in self.0 {
+            let path = path.push(name);
+            value.apply(applier, &path)?;
+        }
+        Ok(())
+    }
+}
+
+impl<'a> Value<'a> {
+    fn apply(
+        self,
+        applier: &mut ChannelsApplier,
+        path: &ApplyPath<'a>,
+    ) -> Result<()> {
+        self.value.apply(applier, path)?;
+        self.props.apply(applier, path)?;
+        Ok(())
+    }
+}
+
+impl<'a> TypedValue<'a> {
+    fn apply(
+        self,
+        applier: &mut ChannelsApplier,
+        path: &ApplyPath<'a>,
+    ) -> Result<()> {
+        match self {
+            Self::Bool(value) => applier.set_bool(path, value),
+            Self::Int(value) => applier.set_int(path, value),
+            Self::Uint(value) => applier.set_uint(path, value),
+            Self::Double(value) => applier.set_double(path, value),
+            Self::String(value) => applier.set_string(path, value),
+            Self::Array(value) => applier.set_array(path, value),
+            Self::Empty => Ok(()),
+        }
+    }
+}
+
+impl<'a> ChannelPatch<'a> {
+    fn apply(
+        self,
+        applier: &mut ChannelsApplier,
+        name: Cow<'a, str>,
+    ) -> Result<()> {
+        let path = ApplyPath {
+            channel: name,
+            props: im::Vector::new(),
+        };
+        self.props.apply(applier, &path)?;
+        Ok(())
+    }
+}
+
+impl<'a> PropertiesPatch<'a> {
+    fn apply(
+        self,
+        applier: &mut ChannelsApplier,
+        path: &ApplyPath<'a>,
+    ) -> Result<()> {
+        // keys of changed, added, removed are disjoint so order doesn't matter
+        for (name, value_patch) in self.changed {
+            let path = path.push(name);
+            value_patch.apply(applier, &path)?;
+        }
+        for (name, value) in self.added {
+            let path = path.push(name);
+            value.apply(applier, &path)?;
+        }
+        for name in self.removed {
+            let path = path.push(name);
+            applier.remove(&path)?;
+        }
+        Ok(())
+    }
+}
+
+impl<'a> ValuePatch<'a> {
+    fn apply(
+        self,
+        applier: &mut ChannelsApplier,
+        path: &ApplyPath<'a>,
+    ) -> Result<()> {
+        self.value.apply(applier, path)?;
+        self.props.apply(applier, path)?;
+        Ok(())
+    }
+}
+
+impl<'a> TypedValuePatch<'a> {
+    fn apply(
+        self,
+        applier: &mut ChannelsApplier,
+        path: &ApplyPath<'a>,
+    ) -> Result<()> {
+        match self {
+            Self::Bool(value_patch) => value_patch.apply(applier, path),
+            Self::Int(value_patch) => value_patch.apply(applier, path),
+            Self::Uint(value_patch) => value_patch.apply(applier, path),
+            Self::Double(value_patch) => value_patch.apply(applier, path),
+            Self::String(value_patch) => value_patch.apply(applier, path),
+            Self::Array(value_patch) => value_patch.apply(applier, path),
+            Self::Empty => Ok(()),
+            Self::Changed(value) => value.apply(applier, path),
+        }
+    }
+}
+
+macro_rules! impl_simple_patch_apply {
+    ($ty:ty, $set:ident) => {
+        impl SimplePatch<$ty> {
+            fn apply(
+                self,
+                applier: &mut ChannelsApplier,
+                path: &ApplyPath<'_>,
+            ) -> Result<()> {
+                if let Some(value) = self.value {
+                    applier.$set(path, value)
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    };
+}
+impl_simple_patch_apply!(bool, set_bool);
+impl_simple_patch_apply!(i32, set_int);
+impl_simple_patch_apply!(u32, set_uint);
+impl_simple_patch_apply!(f64, set_double);
+impl_simple_patch_apply!(Cow<'_, str>, set_string);
+impl_simple_patch_apply!(Vec<Value<'_>>, set_array);
 
 #[cfg(test)]
 mod tests {

@@ -89,3 +89,10 @@ where
         .map(|plugin_config| (plugin_config.plugin.clone(), plugin_config))
         .collect::<BTreeMap<_, _>>())
 }
+
+impl XfceConfigPatch<'_> {
+    pub fn apply(self) -> Result<()> {
+        self.channels.apply(&mut channel::ChannelsApplier::new()?)?;
+        Ok(())
+    }
+}
