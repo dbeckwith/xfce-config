@@ -19,6 +19,7 @@ fn main() -> Result<()> {
         .context("error reading config from environment")?;
     dbg!(&existing_config);
 
+    // TODO: eliminate clones by passing new by value
     let diff = XfceConfigPatch::diff(&existing_config, &new_config);
     dbg!(&diff);
 

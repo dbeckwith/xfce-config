@@ -20,6 +20,7 @@ pub struct XfceConfig<'a> {
 #[derive(Debug)]
 pub struct XfceConfigPatch<'a> {
     channels: channel::ChannelsPatch<'a>,
+    panel_plugin_configs: panel::PluginConfigsPatch<'a>,
 }
 
 impl<'a> XfceConfigPatch<'a> {
@@ -28,6 +29,10 @@ impl<'a> XfceConfigPatch<'a> {
             channels: channel::ChannelsPatch::diff(
                 &old.channels,
                 &new.channels,
+            ),
+            panel_plugin_configs: panel::PluginConfigsPatch::diff(
+                &old.panel_plugin_configs,
+                &new.panel_plugin_configs,
             ),
         }
     }

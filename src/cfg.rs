@@ -2,16 +2,99 @@ use anyhow::{bail, Result};
 use serde::Deserialize;
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::BTreeMap,
     io::{BufRead, Write},
 };
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct Cfg<'a> {
     #[serde(default)]
-    pub root: HashMap<Cow<'a, str>, Cow<'a, str>>,
+    pub root: BTreeMap<Cow<'a, str>, Cow<'a, str>>,
     #[serde(default)]
-    pub sections: HashMap<Cow<'a, str>, HashMap<Cow<'a, str>, Cow<'a, str>>>,
+    pub sections: BTreeMap<Cow<'a, str>, BTreeMap<Cow<'a, str>, Cow<'a, str>>>,
+}
+
+#[derive(Debug)]
+pub struct CfgPatch<'a> {
+    root: MapPatch<'a, StrPatch<'a>>,
+    sections: MapPatch<'a, MapPatch<'a, StrPatch<'a>>>,
+}
+
+impl<'a> CfgPatch<'a> {
+    pub fn diff(old: &Cfg<'a>, new: &Cfg<'a>) -> Self {
+        Self {
+            root: MapPatch::diff(&old.root, &new.root),
+            sections: MapPatch::diff(&old.sections, &new.sections),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.root.is_empty() && self.sections.is_empty()
+    }
+}
+
+trait Patch {
+    type Data;
+
+    fn diff(old: &Self::Data, new: &Self::Data) -> Self;
+
+    fn is_empty(&self) -> bool;
+}
+
+#[derive(Debug)]
+struct MapPatch<'a, T>
+where
+    T: Patch,
+{
+    changed: BTreeMap<Cow<'a, str>, T>,
+    added: BTreeMap<Cow<'a, str>, T::Data>,
+}
+
+impl<'a, T> Patch for MapPatch<'a, T>
+where
+    T: Patch,
+    T::Data: Clone,
+{
+    type Data = BTreeMap<Cow<'a, str>, T::Data>;
+
+    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
+        let mut changed = BTreeMap::new();
+        let mut added = BTreeMap::new();
+        for (key, new_value) in new.iter() {
+            if let Some(old_value) = old.get(key) {
+                let patch = T::diff(old_value, new_value);
+                if !patch.is_empty() {
+                    changed.insert(key.clone(), patch);
+                }
+            } else {
+                added.insert(key.clone(), new_value.clone());
+            }
+        }
+        Self { changed, added }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.changed.is_empty() && self.added.is_empty()
+    }
+}
+
+#[derive(Debug)]
+struct StrPatch<'a> {
+    value: Option<Cow<'a, str>>,
+}
+
+impl<'a> Patch for StrPatch<'a> {
+    type Data = Cow<'a, str>;
+
+    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
+        Self {
+            value: (old != new).then(|| new.clone()),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.value.is_none()
+    }
 }
 
 impl Cfg<'_> {

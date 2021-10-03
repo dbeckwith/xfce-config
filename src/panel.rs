@@ -1,12 +1,21 @@
-use crate::{cfg::Cfg, serde::IdMap};
+use crate::{
+    cfg::{Cfg, CfgPatch},
+    serde::IdMap,
+};
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use std::{borrow::Cow, collections::BTreeMap, fs, io, path::Path};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    io,
+    path::Path,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct PluginConfigs<'a>(IdMap<PluginConfig<'a>>);
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct PluginConfig<'a> {
     plugin: PluginId<'a>,
     file: PluginConfigFile<'a>,
@@ -18,34 +27,206 @@ struct PluginId<'a> {
     id: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum PluginConfigFile<'a> {
     Rc(Cfg<'a>),
     DesktopDir(DesktopDir<'a>),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct DesktopDir<'a> {
     files: IdMap<DesktopFile<'a>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct DesktopFile<'a> {
     id: u64,
     content: DesktopFileContent<'a>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum DesktopFileContent<'a> {
     Cfg(Cfg<'a>),
     Link(Link<'a>),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct Link<'a> {
     path: Cow<'a, Path>,
+}
+
+trait Patch {
+    type Data;
+
+    fn diff(old: &Self::Data, new: &Self::Data) -> Self;
+
+    fn is_empty(&self) -> bool;
+}
+
+#[derive(Debug)]
+struct MapPatch<K, V>
+where
+    K: Ord,
+    V: Patch,
+{
+    changed: BTreeMap<K, V>,
+    added: BTreeMap<K, V::Data>,
+    removed: BTreeSet<K>,
+}
+
+impl<K, V> Patch for MapPatch<K, V>
+where
+    K: Clone + Ord,
+    V: Patch,
+    V::Data: Clone,
+{
+    type Data = BTreeMap<K, V::Data>;
+
+    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
+        let mut changed = BTreeMap::new();
+        let mut added = BTreeMap::new();
+        for (key, new_value) in new.iter() {
+            if let Some(old_value) = old.get(key) {
+                let patch = V::diff(old_value, new_value);
+                if !patch.is_empty() {
+                    changed.insert(key.clone(), patch);
+                }
+            } else {
+                added.insert(key.clone(), new_value.clone());
+            }
+        }
+        let removed = old
+            .keys()
+            .cloned()
+            .filter(|key| !new.contains_key(key))
+            .collect::<BTreeSet<_>>();
+        Self {
+            changed,
+            added,
+            removed,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.changed.is_empty() && self.added.is_empty()
+    }
+}
+
+#[derive(Debug)]
+pub struct PluginConfigsPatch<'a>(
+    MapPatch<PluginId<'a>, PluginConfigPatch<'a>>,
+);
+
+impl<'a> PluginConfigsPatch<'a> {
+    pub fn diff(old: &PluginConfigs<'a>, new: &PluginConfigs<'a>) -> Self {
+        Self(MapPatch::diff(&(old.0).0, &(new.0).0))
+    }
+}
+
+#[derive(Debug)]
+enum PluginConfigPatch<'a> {
+    Rc(PluginId<'a>, CfgPatch<'a>),
+    DesktopDir(PluginId<'a>, DesktopDirPatch<'a>),
+    Changed(PluginConfig<'a>),
+}
+
+impl<'a> Patch for PluginConfigPatch<'a> {
+    type Data = PluginConfig<'a>;
+
+    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
+        match (&old.file, &new.file) {
+            (PluginConfigFile::Rc(old_rc), PluginConfigFile::Rc(new_rc)) => {
+                Self::Rc(new.plugin.clone(), CfgPatch::diff(old_rc, new_rc))
+            },
+            (
+                PluginConfigFile::DesktopDir(old_desktop_dir),
+                PluginConfigFile::DesktopDir(new_desktop_dir),
+            ) => Self::DesktopDir(
+                new.plugin.clone(),
+                DesktopDirPatch::diff(old_desktop_dir, new_desktop_dir),
+            ),
+            _ => Self::Changed(new.clone()),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        match self {
+            PluginConfigPatch::Rc(_, cfg_patch) => cfg_patch.is_empty(),
+            PluginConfigPatch::DesktopDir(_, desktop_dir_patch) => {
+                desktop_dir_patch.is_empty()
+            },
+            PluginConfigPatch::Changed(_) => false,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct DesktopDirPatch<'a>(MapPatch<u64, DesktopFilePatch<'a>>);
+
+impl<'a> Patch for DesktopDirPatch<'a> {
+    type Data = DesktopDir<'a>;
+
+    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
+        Self(MapPatch::diff(&old.files.0, &new.files.0))
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+#[derive(Debug)]
+enum DesktopFilePatch<'a> {
+    Cfg(u64, CfgPatch<'a>),
+    Link(u64, LinkPatch<'a>),
+    Changed(DesktopFile<'a>),
+}
+
+impl<'a> Patch for DesktopFilePatch<'a> {
+    type Data = DesktopFile<'a>;
+
+    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
+        match (&old.content, &new.content) {
+            (
+                DesktopFileContent::Cfg(old_cfg),
+                DesktopFileContent::Cfg(new_cfg),
+            ) => Self::Cfg(new.id, CfgPatch::diff(old_cfg, new_cfg)),
+            (
+                DesktopFileContent::Link(old_link),
+                DesktopFileContent::Link(new_link),
+            ) => Self::Link(new.id, LinkPatch::diff(old_link, new_link)),
+            _ => Self::Changed(new.clone()),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        match self {
+            DesktopFilePatch::Cfg(_, cfg_patch) => cfg_patch.is_empty(),
+            DesktopFilePatch::Link(_, link_patch) => link_patch.is_empty(),
+            DesktopFilePatch::Changed(_) => false,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct LinkPatch<'a> {
+    value: Option<Cow<'a, Path>>,
+}
+
+impl<'a> Patch for LinkPatch<'a> {
+    type Data = Link<'a>;
+
+    fn diff(old: &Self::Data, new: &Self::Data) -> Self {
+        Self {
+            value: (old.path != new.path).then(|| new.path.clone()),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.value.is_none()
+    }
 }
 
 impl PluginConfigs<'static> {

@@ -265,7 +265,7 @@ impl<'a> TypedValuePatch<'a> {
                 Self::Array(SimplePatch::diff(old_array, new_array))
             },
             (TypedValue::Empty, TypedValue::Empty) => Self::Empty,
-            (_old, new) => Self::Changed(new.clone()),
+            _ => Self::Changed(new.clone()),
         }
     }
 
