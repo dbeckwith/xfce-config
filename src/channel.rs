@@ -20,27 +20,27 @@ pub struct Channels<'a>(
 );
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Channel<'a> {
-    pub name: Cow<'a, str>,
-    pub version: Cow<'a, str>,
+struct Channel<'a> {
+    name: Cow<'a, str>,
+    version: Cow<'a, str>,
     #[serde(default)]
-    pub props: Properties<'a>,
+    props: Properties<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
-pub struct Properties<'a>(BTreeMap<Cow<'a, str>, Value<'a>>);
+struct Properties<'a>(BTreeMap<Cow<'a, str>, Value<'a>>);
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Value<'a> {
+struct Value<'a> {
     #[serde(flatten)]
-    pub value: TypedValue<'a>,
+    value: TypedValue<'a>,
     #[serde(default)]
-    pub props: Properties<'a>,
+    props: Properties<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "kebab-case")]
-pub enum TypedValue<'a> {
+enum TypedValue<'a> {
     Bool(bool),
     Int(i32),
     Uint(u32),
@@ -48,81 +48,6 @@ pub enum TypedValue<'a> {
     String(Cow<'a, str>),
     Array(Vec<Value<'a>>),
     Empty,
-}
-
-impl<'a> Channel<'a> {
-    pub fn new(
-        name: impl Into<Cow<'a, str>>,
-        version: impl Into<Cow<'a, str>>,
-        props: Properties<'a>,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            version: version.into(),
-            props,
-        }
-    }
-}
-
-impl<'a> Properties<'a> {
-    pub fn new() -> Self {
-        Self(BTreeMap::new())
-    }
-}
-
-impl<'a> Value<'a> {
-    pub fn new(value: TypedValue<'a>, props: Properties<'a>) -> Self {
-        Self { value, props }
-    }
-
-    pub fn bool(b: bool) -> Self {
-        Self {
-            value: TypedValue::Bool(b),
-            props: Default::default(),
-        }
-    }
-
-    pub fn int(n: i32) -> Self {
-        Self {
-            value: TypedValue::Int(n),
-            props: Default::default(),
-        }
-    }
-
-    pub fn uint(n: u32) -> Self {
-        Self {
-            value: TypedValue::Uint(n),
-            props: Default::default(),
-        }
-    }
-
-    pub fn double(f: f64) -> Self {
-        Self {
-            value: TypedValue::Double(f),
-            props: Default::default(),
-        }
-    }
-
-    pub fn string(s: impl Into<Cow<'a, str>>) -> Self {
-        Self {
-            value: TypedValue::String(s.into()),
-            props: Default::default(),
-        }
-    }
-
-    pub fn array(items: Vec<Value<'a>>) -> Self {
-        Self {
-            value: TypedValue::Array(items),
-            props: Default::default(),
-        }
-    }
-
-    pub fn empty(props: Properties<'a>) -> Self {
-        Self {
-            value: TypedValue::Empty,
-            props,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -154,14 +79,14 @@ impl<'a> ChannelsPatch<'a> {
 }
 
 #[derive(Debug)]
-pub struct ChannelPatch<'a> {
+struct ChannelPatch<'a> {
     name: SimplePatch<Cow<'a, str>>,
     version: SimplePatch<Cow<'a, str>>,
     props: PropertiesPatch<'a>,
 }
 
 impl<'a> ChannelPatch<'a> {
-    pub fn diff(old: &Channel<'a>, new: &Channel<'a>) -> Self {
+    fn diff(old: &Channel<'a>, new: &Channel<'a>) -> Self {
         Self {
             name: SimplePatch::diff(&old.name, &new.name),
             version: SimplePatch::diff(&old.version, &new.version),
@@ -174,7 +99,7 @@ impl<'a> ChannelPatch<'a> {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.name.is_empty() && self.version.is_empty() && self.props.is_empty()
     }
 }
@@ -192,7 +117,7 @@ enum PropertiesCtx<'a, 'b> {
 }
 
 impl<'a> PropertiesPatch<'a> {
-    pub fn diff<'b, 'p>(
+    fn diff<'b, 'p>(
         old: &'b Properties<'a>,
         new: &'b Properties<'a>,
         path: &'p Path<'b>,
@@ -268,7 +193,7 @@ impl<'a> PropertiesPatch<'a> {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.changed.is_empty()
             && self.added.is_empty()
             && self.removed.is_empty()
@@ -282,7 +207,7 @@ struct ValuePatch<'a> {
 }
 
 impl<'a> ValuePatch<'a> {
-    pub fn diff<'b, 'p>(
+    fn diff<'b, 'p>(
         old: &'b Value<'a>,
         new: &'b Value<'a>,
         path: &'p Path<'b>,
@@ -298,7 +223,7 @@ impl<'a> ValuePatch<'a> {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.value.is_empty() && self.props.is_empty()
     }
 }
@@ -316,7 +241,7 @@ enum TypedValuePatch<'a> {
 }
 
 impl<'a> TypedValuePatch<'a> {
-    pub fn diff(old: &TypedValue<'a>, new: &TypedValue<'a>) -> Self {
+    fn diff(old: &TypedValue<'a>, new: &TypedValue<'a>) -> Self {
         match (old, new) {
             (TypedValue::Bool(old_bool), TypedValue::Bool(new_bool)) => {
                 Self::Bool(SimplePatch::diff(old_bool, new_bool))
@@ -343,7 +268,7 @@ impl<'a> TypedValuePatch<'a> {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         match self {
             Self::Bool(patch) => patch.is_empty(),
             Self::Int(patch) => patch.is_empty(),
@@ -366,13 +291,13 @@ impl<T> SimplePatch<T>
 where
     T: PartialEq + Clone,
 {
-    pub fn diff(old: &T, new: &T) -> Self {
+    fn diff(old: &T, new: &T) -> Self {
         Self {
             value: (old != new).then(|| new.clone()),
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.value.is_none()
     }
 }
@@ -430,7 +355,7 @@ impl Channels<'_> {
 }
 
 impl Channel<'_> {
-    pub fn read_xml<R>(reader: R) -> Result<Self>
+    fn read_xml<R>(reader: R) -> Result<Self>
     where
         R: BufRead,
     {
@@ -506,7 +431,7 @@ impl Channel<'_> {
             R: BufRead,
         {
             let mut values = Vec::new();
-            let mut props = Properties::new();
+            let mut props = Properties::default();
             loop {
                 match reader.read_event(buf)? {
                     Event::Start(tag) => match tag.name() {
@@ -716,7 +641,8 @@ impl Channel<'_> {
         read_channel(&mut reader, &mut buf)
     }
 
-    pub fn write_xml<W>(&self, writer: W) -> Result<()>
+    #[allow(dead_code)]
+    fn write_xml<W>(&self, writer: W) -> Result<()>
     where
         W: Write,
     {
