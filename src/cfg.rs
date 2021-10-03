@@ -1,9 +1,11 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::{
     borrow::Cow,
     collections::BTreeMap,
-    io::{BufRead, Write},
+    fs,
+    io::{self, BufRead, Write},
+    path::PathBuf,
 };
 
 #[derive(Debug, Default, Deserialize)]
@@ -93,6 +95,11 @@ impl<'a> CfgPatch<'a> {
     pub fn is_empty(&self) -> bool {
         self.root.is_empty() && self.sections.is_empty()
     }
+
+    fn apply_to_old(self, old: &mut Cfg<'a>) {
+        self.root.apply_to_old(&mut old.root);
+        self.sections.apply_to_old(&mut old.sections);
+    }
 }
 
 trait Patch {
@@ -101,6 +108,8 @@ trait Patch {
     fn diff(old: Self::Data, new: Self::Data) -> Self;
 
     fn is_empty(&self) -> bool;
+
+    fn apply_to_old(self, old: &mut Self::Data);
 }
 
 #[derive(Debug)]
@@ -137,6 +146,17 @@ where
     fn is_empty(&self) -> bool {
         self.changed.is_empty() && self.added.is_empty()
     }
+
+    fn apply_to_old(self, old: &mut Self::Data) {
+        for (key, value_patch) in self.changed {
+            if let Some(old_value) = old.get_mut(&key) {
+                value_patch.apply_to_old(old_value);
+            }
+        }
+        for (key, value) in self.added {
+            old.insert(key, value);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -155,5 +175,65 @@ impl<'a> Patch for StrPatch<'a> {
 
     fn is_empty(&self) -> bool {
         self.value.is_none()
+    }
+
+    fn apply_to_old(self, old: &mut Self::Data) {
+        if let Some(value) = self.value {
+            *old = value;
+        }
+    }
+}
+
+pub struct Applier {
+    dry_run: bool,
+    path: PathBuf,
+}
+
+impl Applier {
+    pub fn new(dry_run: bool, path: PathBuf) -> Self {
+        Self { dry_run, path }
+    }
+
+    fn write_cfg(&mut self, cfg: &Cfg<'_>) -> Result<()> {
+        eprintln!("writing CFG to {}:", self.path.display());
+        eprintln!("====================");
+        cfg.write(std::io::stderr())
+            .context("error writing CFG to stderr")?;
+        eprintln!("====================");
+        if !self.dry_run {
+            cfg.write(
+                fs::File::create(&self.path)
+                    .context("error creating CFG file")?,
+            )
+            .context("error writing CFG file")?;
+        }
+        Ok(())
+    }
+
+    fn update_cfg(&mut self, cfg_patch: CfgPatch<'_>) -> Result<()> {
+        eprintln!("updating CFG at {}", self.path.display());
+        let mut cfg = Cfg::read(
+            fs::File::open(&self.path)
+                .map(io::BufReader::new)
+                .context("error opening existing CFG file")?,
+        )
+        .context("error reading existing CFG file")?;
+        cfg_patch.apply_to_old(&mut cfg);
+        self.write_cfg(&cfg)?;
+        Ok(())
+    }
+}
+
+impl Cfg<'_> {
+    pub fn apply(self, applier: &mut Applier) -> Result<()> {
+        applier.write_cfg(&self)?;
+        Ok(())
+    }
+}
+
+impl CfgPatch<'_> {
+    pub fn apply(self, applier: &mut Applier) -> Result<()> {
+        applier.update_cfg(self)?;
+        Ok(())
     }
 }

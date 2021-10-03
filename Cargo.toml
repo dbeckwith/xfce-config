@@ -12,6 +12,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0.43"
+cfg-if = "1.0.0"
 dirs2 = "3.0.1"
 gio = "0.14.6"
 glib = "0.14.5"

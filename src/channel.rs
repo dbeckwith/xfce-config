@@ -831,9 +831,7 @@ impl Applier {
     ) -> Result<()> {
         let args = args.to_variant();
         eprintln!("call {}{}", method, args.to_string());
-        if self.dry_run {
-            Ok(())
-        } else {
+        if !self.dry_run {
             gio::prelude::DBusProxyExt::call_sync::<gio::Cancellable>(
                 &self.dbus,
                 method,
@@ -842,9 +840,9 @@ impl Applier {
                 -1,
                 None,
             )
-            .map(|_| ())
-            .with_context(|| format!("{}{}", method, args.to_string()))
+            .with_context(|| format!("{}{}", method, args.to_string()))?;
         }
+        Ok(())
     }
 
     fn set(

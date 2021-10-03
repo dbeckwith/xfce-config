@@ -48,12 +48,12 @@ impl XfceConfig<'static> {
     }
 
     pub fn from_env(xfce4_config_dir: &Path) -> Result<Self> {
-        let channels_dir = xfce4_config_dir.join("xfconf/xfce-perchannel-xml");
-        let panel_plugins_dir = xfce4_config_dir.join("panel");
-        let channels = channel::Channels::read(&channels_dir)
-            .context("error loading channels data")?;
+        let channels = channel::Channels::read(
+            &xfce4_config_dir.join("xfconf/xfce-perchannel-xml"),
+        )
+        .context("error loading channels data")?;
         let panel_plugin_configs =
-            panel::PluginConfigs::read(&panel_plugins_dir)
+            panel::PluginConfigs::read(&xfce4_config_dir.join("panel"))
                 .context("error loading panel plugins data")?;
         Ok(Self {
             channels,
@@ -63,13 +63,19 @@ impl XfceConfig<'static> {
 }
 
 impl XfceConfigPatch<'_> {
-    pub fn apply(self, dry_run: bool) -> Result<()> {
+    pub fn apply(self, dry_run: bool, xfce4_config_dir: &Path) -> Result<()> {
         self.channels
             .apply(
                 &mut channel::Applier::new(dry_run)
                     .context("error creating channels applier")?,
             )
             .context("error applying channels")?;
+        self.panel_plugin_configs
+            .apply(&mut panel::Applier::new(
+                dry_run,
+                xfce4_config_dir.join("panel"),
+            ))
+            .context("error applying panel plugin configs")?;
         Ok(())
     }
 }

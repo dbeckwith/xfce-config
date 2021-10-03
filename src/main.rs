@@ -22,7 +22,8 @@ fn main() -> Result<()> {
     let diff = XfceConfigPatch::diff(existing_config, new_config);
     dbg!(&diff);
 
-    diff.apply(dry_run).context("error applying config")?;
+    diff.apply(dry_run, &xfce4_config_dir)
+        .context("error applying config")?;
 
     Ok(())
 }
