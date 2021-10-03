@@ -89,13 +89,17 @@ struct ChannelPatch<'a> {
 
 impl<'a> ChannelPatch<'a> {
     fn diff(old: &Channel<'a>, new: &Channel<'a>) -> Self {
+        let path = DiffPath {
+            channel: None,
+            props: im::Vector::new(),
+        };
         Self {
             name: SimplePatch::diff(&old.name, &new.name),
             version: SimplePatch::diff(&old.version, &new.version),
             props: PropertiesPatch::diff(
                 &old.props,
                 &new.props,
-                &DiffPath::new(),
+                &path,
                 PropertiesCtx::Channel(old, new),
             ),
         }
@@ -128,53 +132,46 @@ impl<'a> PropertiesPatch<'a> {
         let remove_old = (|| {
             use if_chain::if_chain;
             // remove old panels
-            let mut parts = path.0.iter();
             if_chain! {
-                if let Some(DiffPathPart::Channel((_, channel), _, "panels")) = parts.next();
+                if let Some(((_, channel), "panels")) = path.channel.as_ref();
                 if channel.name == "xfce4-panel";
-                if parts.next().is_none();
+                let mut path_props = path.props.iter();
+                if path_props.next().is_none();
                 then { return true; }
             }
-            drop(parts);
             // remove old plugins
-            let mut parts = path.0.iter();
             if_chain! {
-                if let Some(DiffPathPart::Channel((_, channel), _, "plugins")) = parts.next();
+                if let Some(((_, channel), "plugins")) = path.channel.as_ref();
                 if channel.name == "xfce4-panel";
-                if parts.next().is_none();
+                let mut path_props = path.props.iter();
+                if path_props.next().is_none();
                 then { return true; }
             }
-            drop(parts);
             // remove old props when plugin type changes
-            let mut parts = path.0.iter();
             if_chain! {
-                if let Some(DiffPathPart::Channel((_, channel), _, "plugins")) = parts.next();
+                if let Some(((_, channel), "plugins")) = path.channel.as_ref();
                 if channel.name == "xfce4-panel";
-                if let Some(DiffPathPart::Props(_, _, _)) = parts.next();
-                if parts.next().is_none();
+                let mut path_props = path.props.iter();
+                if let Some((_, _)) = path_props.next();
+                if path_props.next().is_none();
                 if let PropertiesCtx::Value(old_ctx, new_ctx) = ctx;
                 if old_ctx.value != new_ctx.value;
                 then { return true; }
             }
-            drop(parts);
             false
         })();
         let mut changed = BTreeMap::new();
         let mut added = BTreeMap::new();
         for (key, new_value) in new.0.iter() {
             if let Some(old_value) = old.0.get(key) {
-                let path = path.push(match ctx {
+                let path = match ctx {
                     PropertiesCtx::Channel(old_ctx, new_ctx) => {
-                        DiffPathPart::Channel(
-                            (old_ctx, new_ctx),
-                            (old, new),
-                            key,
-                        )
+                        path.with_channel(((old_ctx, new_ctx), key))
                     },
                     PropertiesCtx::Value(old_ctx, new_ctx) => {
-                        DiffPathPart::Props((old_ctx, new_ctx), (old, new), key)
+                        path.push(((old_ctx, new_ctx), key))
                     },
-                });
+                };
                 let patch = ValuePatch::diff(old_value, new_value, &path);
                 if !patch.is_empty() {
                     changed.insert(key.clone(), patch);
@@ -308,32 +305,25 @@ where
     }
 }
 
-// TODO: optimize to fact that channel is always first
 #[derive(Debug, Clone)]
-struct DiffPath<'a>(im::Vector<DiffPathPart<'a>>);
-
-#[derive(Debug, Clone, Copy)]
-enum DiffPathPart<'a> {
-    Channel(
-        (&'a Channel<'a>, &'a Channel<'a>),
-        (&'a Properties<'a>, &'a Properties<'a>),
-        &'a str,
-    ),
-    Props(
-        (&'a Value<'a>, &'a Value<'a>),
-        (&'a Properties<'a>, &'a Properties<'a>),
-        &'a str,
-    ),
+struct DiffPath<'a> {
+    channel: Option<((&'a Channel<'a>, &'a Channel<'a>), &'a str)>,
+    props: im::Vector<((&'a Value<'a>, &'a Value<'a>), &'a str)>,
 }
 
 impl<'a> DiffPath<'a> {
-    fn new() -> Self {
-        Self(im::Vector::new())
+    fn with_channel(
+        &self,
+        channel: ((&'a Channel<'a>, &'a Channel<'a>), &'a str),
+    ) -> Self {
+        let mut path = self.clone();
+        path.channel = Some(channel);
+        path
     }
 
-    fn push(&self, part: DiffPathPart<'a>) -> Self {
+    fn push(&self, prop: ((&'a Value<'a>, &'a Value<'a>), &'a str)) -> Self {
         let mut path = self.clone();
-        path.0.push_back(part);
+        path.props.push_back(prop);
         path
     }
 }
