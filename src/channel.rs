@@ -1,4 +1,3 @@
-use crate::diff;
 use anyhow::{bail, Context, Result};
 use quick_xml::{
     events::{attributes::Attribute, BytesDecl, BytesStart, Event},
@@ -132,58 +131,50 @@ pub struct ChannelsPatch<'a> {
     added: BTreeMap<Cow<'a, str>, Channel<'a>>,
 }
 
-impl<'a> diff::Diff for Channels<'a> {
-    type Patch = ChannelsPatch<'a>;
-
-    fn diff(&self, other: &Self) -> Self::Patch {
-        use diff::Patch;
+impl<'a> ChannelsPatch<'a> {
+    pub fn diff(old: &Channels<'a>, new: &Channels<'a>) -> Self {
         let mut changed = BTreeMap::new();
         let mut added = BTreeMap::new();
-        for (key, other_value) in other.0.iter() {
-            if let Some(self_value) = self.0.get(key) {
-                let patch = self_value.diff(other_value);
+        for (key, new_value) in new.0.iter() {
+            if let Some(old_value) = old.0.get(key) {
+                let patch = ChannelPatch::diff(old_value, new_value);
                 if !patch.is_empty() {
                     changed.insert(key.clone(), patch);
                 }
             } else {
-                added.insert(key.clone(), other_value.clone());
+                added.insert(key.clone(), new_value.clone());
             }
         }
-        ChannelsPatch { changed, added }
+        Self { changed, added }
     }
-}
 
-impl diff::Patch for ChannelsPatch<'_> {
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.changed.is_empty() && self.added.is_empty()
     }
 }
 
 #[derive(Debug)]
 pub struct ChannelPatch<'a> {
-    name: <Cow<'a, str> as diff::Diff>::Patch,
-    version: <Cow<'a, str> as diff::Diff>::Patch,
+    name: SimplePatch<Cow<'a, str>>,
+    version: SimplePatch<Cow<'a, str>>,
     props: PropertiesPatch<'a>,
 }
 
-impl<'a> diff::Diff for Channel<'a> {
-    type Patch = ChannelPatch<'a>;
-
-    fn diff(&self, other: &Self) -> Self::Patch {
-        ChannelPatch {
-            name: self.name.diff(&other.name),
-            version: self.version.diff(&other.version),
-            props: self.props.diff_with_path(
-                &other.props,
+impl<'a> ChannelPatch<'a> {
+    pub fn diff(old: &Channel<'a>, new: &Channel<'a>) -> Self {
+        Self {
+            name: SimplePatch::diff(&old.name, &new.name),
+            version: SimplePatch::diff(&old.version, &new.version),
+            props: PropertiesPatch::diff(
+                &old.props,
+                &new.props,
                 &Path::new(),
-                PropertiesCtx::Channel(self, other),
+                PropertiesCtx::Channel(old, new),
             ),
         }
     }
-}
 
-impl diff::Patch for ChannelPatch<'_> {
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.name.is_empty() && self.version.is_empty() && self.props.is_empty()
     }
 }
@@ -200,14 +191,13 @@ enum PropertiesCtx<'a, 'b> {
     Value(&'b Value<'a>, &'b Value<'a>),
 }
 
-impl<'a> Properties<'a> {
-    fn diff_with_path<'b, 'p>(
-        &'b self,
-        other: &'b Self,
+impl<'a> PropertiesPatch<'a> {
+    pub fn diff<'b, 'p>(
+        old: &'b Properties<'a>,
+        new: &'b Properties<'a>,
         path: &'p Path<'b>,
         ctx: PropertiesCtx<'a, 'b>,
-    ) -> PropertiesPatch<'a> {
-        use diff::Patch;
+    ) -> Self {
         let remove_old = (|| {
             use if_chain::if_chain;
             // remove old panels
@@ -235,8 +225,8 @@ impl<'a> Properties<'a> {
                 if channel.name == "xfce4-panel";
                 if let Some(PathPart::Props(_, _, _)) = parts.next();
                 if parts.next().is_none();
-                if let PropertiesCtx::Value(self_ctx, other_ctx) = ctx;
-                if self_ctx.value != other_ctx.value;
+                if let PropertiesCtx::Value(old_ctx, new_ctx) = ctx;
+                if old_ctx.value != new_ctx.value;
                 then { return true; }
             }
             drop(parts);
@@ -244,51 +234,41 @@ impl<'a> Properties<'a> {
         })();
         let mut changed = BTreeMap::new();
         let mut added = BTreeMap::new();
-        for (key, other_value) in other.0.iter() {
-            if let Some(self_value) = self.0.get(key) {
+        for (key, new_value) in new.0.iter() {
+            if let Some(old_value) = old.0.get(key) {
                 let path = path.push(match ctx {
-                    PropertiesCtx::Channel(self_ctx, other_ctx) => {
-                        PathPart::Channel(
-                            (self_ctx, other_ctx),
-                            (self, other),
-                            key,
-                        )
+                    PropertiesCtx::Channel(old_ctx, new_ctx) => {
+                        PathPart::Channel((old_ctx, new_ctx), (old, new), key)
                     },
-                    PropertiesCtx::Value(self_ctx, other_ctx) => {
-                        PathPart::Props(
-                            (self_ctx, other_ctx),
-                            (self, other),
-                            key,
-                        )
+                    PropertiesCtx::Value(old_ctx, new_ctx) => {
+                        PathPart::Props((old_ctx, new_ctx), (old, new), key)
                     },
                 });
-                let patch = self_value.diff(other_value, &path);
+                let patch = ValuePatch::diff(old_value, new_value, &path);
                 if !patch.is_empty() {
                     changed.insert(key.clone(), patch);
                 }
             } else {
-                added.insert(key.clone(), other_value.clone());
+                added.insert(key.clone(), new_value.clone());
             }
         }
         let removed = if remove_old {
-            self.0
+            old.0
                 .keys()
                 .cloned()
-                .filter(|key| !other.0.contains_key(key))
+                .filter(|key| !new.0.contains_key(key))
                 .collect::<BTreeSet<_>>()
         } else {
             BTreeSet::new()
         };
-        PropertiesPatch {
+        Self {
             changed,
             added,
             removed,
         }
     }
-}
 
-impl diff::Patch for PropertiesPatch<'_> {
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.changed.is_empty()
             && self.added.is_empty()
             && self.removed.is_empty()
@@ -301,101 +281,99 @@ struct ValuePatch<'a> {
     props: PropertiesPatch<'a>,
 }
 
-impl<'a> Value<'a> {
-    fn diff<'b, 'p>(
-        &'b self,
-        other: &'b Self,
+impl<'a> ValuePatch<'a> {
+    pub fn diff<'b, 'p>(
+        old: &'b Value<'a>,
+        new: &'b Value<'a>,
         path: &'p Path<'b>,
-    ) -> ValuePatch<'a> {
-        ValuePatch {
-            value: self.value.diff(&other.value),
-            props: self.props.diff_with_path(
-                &other.props,
+    ) -> Self {
+        Self {
+            value: TypedValuePatch::diff(&old.value, &new.value),
+            props: PropertiesPatch::diff(
+                &old.props,
+                &new.props,
                 path,
-                PropertiesCtx::Value(self, other),
+                PropertiesCtx::Value(old, new),
             ),
         }
     }
-}
 
-impl diff::Patch for ValuePatch<'_> {
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.value.is_empty() && self.props.is_empty()
     }
 }
 
 #[derive(Debug)]
 enum TypedValuePatch<'a> {
-    Bool(<bool as diff::Diff>::Patch),
-    Int(<i32 as diff::Diff>::Patch),
-    Uint(<u32 as diff::Diff>::Patch),
-    Double(<f64 as diff::Diff>::Patch),
-    String(<Cow<'a, str> as diff::Diff>::Patch),
-    Array(ArrayPatch<'a>),
+    Bool(SimplePatch<bool>),
+    Int(SimplePatch<i32>),
+    Uint(SimplePatch<u32>),
+    Double(SimplePatch<f64>),
+    String(SimplePatch<Cow<'a, str>>),
+    Array(SimplePatch<Vec<Value<'a>>>),
     Empty,
     Changed(TypedValue<'a>),
 }
 
-impl<'a> TypedValue<'a> {
-    fn diff(&self, other: &Self) -> TypedValuePatch<'a> {
-        use diff::Diff;
-        match (self, other) {
-            (Self::Bool(self_bool), Self::Bool(other_bool)) => {
-                TypedValuePatch::Bool(self_bool.diff(other_bool))
+impl<'a> TypedValuePatch<'a> {
+    pub fn diff(old: &TypedValue<'a>, new: &TypedValue<'a>) -> Self {
+        match (old, new) {
+            (TypedValue::Bool(old_bool), TypedValue::Bool(new_bool)) => {
+                Self::Bool(SimplePatch::diff(old_bool, new_bool))
             },
-            (Self::Int(self_int), Self::Int(other_int)) => {
-                TypedValuePatch::Int(self_int.diff(other_int))
+            (TypedValue::Int(old_int), TypedValue::Int(new_int)) => {
+                Self::Int(SimplePatch::diff(old_int, new_int))
             },
-            (Self::Uint(self_uint), Self::Uint(other_uint)) => {
-                TypedValuePatch::Uint(self_uint.diff(other_uint))
+            (TypedValue::Uint(old_uint), TypedValue::Uint(new_uint)) => {
+                Self::Uint(SimplePatch::diff(old_uint, new_uint))
             },
-            (Self::Double(self_double), Self::Double(other_double)) => {
-                TypedValuePatch::Double(self_double.diff(other_double))
+            (
+                TypedValue::Double(old_double),
+                TypedValue::Double(new_double),
+            ) => Self::Double(SimplePatch::diff(old_double, new_double)),
+            (
+                TypedValue::String(old_string),
+                TypedValue::String(new_string),
+            ) => Self::String(SimplePatch::diff(old_string, new_string)),
+            (TypedValue::Array(old_array), TypedValue::Array(new_array)) => {
+                Self::Array(SimplePatch::diff(old_array, new_array))
             },
-            (Self::String(self_string), Self::String(other_string)) => {
-                TypedValuePatch::String(self_string.diff(other_string))
-            },
-            (Self::Array(self_array), Self::Array(other_array)) => {
-                TypedValuePatch::Array(array_diff(self_array, other_array))
-            },
-            (Self::Empty, Self::Empty) => TypedValuePatch::Empty,
-            (_self, other) => TypedValuePatch::Changed(other.clone()),
+            (TypedValue::Empty, TypedValue::Empty) => Self::Empty,
+            (_old, new) => Self::Changed(new.clone()),
         }
     }
-}
 
-impl diff::Patch for TypedValuePatch<'_> {
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         match self {
-            TypedValuePatch::Bool(patch) => patch.is_empty(),
-            TypedValuePatch::Int(patch) => patch.is_empty(),
-            TypedValuePatch::Uint(patch) => patch.is_empty(),
-            TypedValuePatch::Double(patch) => patch.is_empty(),
-            TypedValuePatch::String(patch) => patch.is_empty(),
-            TypedValuePatch::Array(patch) => patch.is_empty(),
-            TypedValuePatch::Empty => true,
-            TypedValuePatch::Changed(_) => true,
+            Self::Bool(patch) => patch.is_empty(),
+            Self::Int(patch) => patch.is_empty(),
+            Self::Uint(patch) => patch.is_empty(),
+            Self::Double(patch) => patch.is_empty(),
+            Self::String(patch) => patch.is_empty(),
+            Self::Array(patch) => patch.is_empty(),
+            Self::Empty => true,
+            Self::Changed(_) => true,
         }
     }
 }
 
 #[derive(Debug)]
-struct ArrayPatch<'a> {
-    array: Option<Vec<Value<'a>>>,
+struct SimplePatch<T> {
+    value: Option<T>,
 }
 
-fn array_diff<'a>(
-    self_array: &[Value<'a>],
-    other_array: &[Value<'a>],
-) -> ArrayPatch<'a> {
-    ArrayPatch {
-        array: (self_array != other_array).then(|| other_array.to_owned()),
+impl<T> SimplePatch<T>
+where
+    T: PartialEq + Clone,
+{
+    pub fn diff(old: &T, new: &T) -> Self {
+        Self {
+            value: (old != new).then(|| new.clone()),
+        }
     }
-}
 
-impl diff::Patch for ArrayPatch<'_> {
-    fn is_empty(&self) -> bool {
-        self.array.is_none()
+    pub fn is_empty(&self) -> bool {
+        self.value.is_none()
     }
 }
 

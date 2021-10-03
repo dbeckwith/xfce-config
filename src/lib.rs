@@ -3,18 +3,16 @@
 
 pub mod cfg;
 pub mod channel;
-pub mod diff;
 pub mod panel;
 
 use anyhow::{Context, Result};
-use channel::Channels;
 use serde::{de, Deserialize};
 use std::{collections::BTreeMap, io::Read, path::Path};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct XfceConfig<'a> {
-    pub channels: Channels<'a>,
+    pub channels: channel::Channels<'a>,
     #[serde(deserialize_with = "de_xfce_config_panel_plugin_configs")]
     pub panel_plugin_configs:
         BTreeMap<panel::PluginId<'a>, panel::PluginConfig<'a>>,
@@ -22,21 +20,20 @@ pub struct XfceConfig<'a> {
 
 #[derive(Debug)]
 pub struct XfceConfigPatch<'a> {
-    channels: <Channels<'a> as diff::Diff>::Patch,
+    channels: channel::ChannelsPatch<'a>,
 }
 
-impl<'a> diff::Diff for XfceConfig<'a> {
-    type Patch = XfceConfigPatch<'a>;
-
-    fn diff(&self, other: &Self) -> Self::Patch {
+impl<'a> XfceConfigPatch<'a> {
+    pub fn diff(old: &XfceConfig<'a>, new: &XfceConfig<'a>) -> Self {
         XfceConfigPatch {
-            channels: self.channels.diff(&other.channels),
+            channels: channel::ChannelsPatch::diff(
+                &old.channels,
+                &new.channels,
+            ),
         }
     }
-}
 
-impl diff::Patch for XfceConfigPatch<'_> {
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.channels.is_empty()
     }
 }
@@ -53,7 +50,7 @@ impl XfceConfig<'static> {
         let channels_dir = xfce4_config_dir.join("xfconf/xfce-perchannel-xml");
         let panel_plugins_dir = xfce4_config_dir.join("panel");
 
-        let channels = Channels::read(&channels_dir)?;
+        let channels = channel::Channels::read(&channels_dir)?;
 
         let panel_plugin_configs = panel_plugins_dir
             .read_dir()

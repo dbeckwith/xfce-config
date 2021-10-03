@@ -2,7 +2,7 @@
 #![deny(clippy::correctness)]
 
 use anyhow::{Context, Result};
-use xfce_config::{diff::Diff, XfceConfig};
+use xfce_config::{XfceConfig, XfceConfigPatch};
 
 fn main() -> Result<()> {
     let new_config = XfceConfig::from_json_reader(std::io::stdin())
@@ -17,7 +17,7 @@ fn main() -> Result<()> {
         .context("error reading config from environment")?;
     dbg!(&existing_config);
 
-    let diff = existing_config.diff(&new_config);
+    let diff = XfceConfigPatch::diff(&existing_config, &new_config);
     dbg!(&diff);
 
     // diff.apply(xfconf);
