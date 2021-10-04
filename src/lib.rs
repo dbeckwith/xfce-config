@@ -8,7 +8,10 @@ mod serde;
 
 use ::serde::Deserialize;
 use anyhow::{Context, Result};
-use std::{io::Read, path::Path};
+use std::{
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -62,18 +65,32 @@ impl XfceConfig<'static> {
     }
 }
 
+pub struct Applier {
+    dry_run: bool,
+    xfce4_config_dir: PathBuf,
+}
+
+impl Applier {
+    pub fn new(dry_run: bool, xfce4_config_dir: PathBuf) -> Self {
+        Self {
+            dry_run,
+            xfce4_config_dir,
+        }
+    }
+}
+
 impl XfceConfigPatch<'_> {
-    pub fn apply(self, dry_run: bool, xfce4_config_dir: &Path) -> Result<()> {
+    pub fn apply(self, applier: &mut Applier) -> Result<()> {
         self.channels
             .apply(
-                &mut channel::Applier::new(dry_run)
+                &mut channel::Applier::new(applier.dry_run)
                     .context("error creating channels applier")?,
             )
             .context("error applying channels")?;
         self.panel_plugin_configs
             .apply(&mut panel::Applier::new(
-                dry_run,
-                xfce4_config_dir.join("panel"),
+                applier.dry_run,
+                applier.xfce4_config_dir.join("panel"),
             ))
             .context("error applying panel plugin configs")?;
         Ok(())

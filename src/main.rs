@@ -3,7 +3,7 @@
 
 use anyhow::{Context, Result};
 use structopt::StructOpt;
-use xfce_config::{XfceConfig, XfceConfigPatch};
+use xfce_config::{Applier, XfceConfig, XfceConfigPatch};
 
 #[derive(StructOpt)]
 struct Args {
@@ -32,7 +32,7 @@ fn main() -> Result<()> {
     let diff = XfceConfigPatch::diff(existing_config, new_config);
     dbg!(&diff);
 
-    diff.apply(dry_run, &xfce4_config_dir)
+    diff.apply(&mut Applier::new(dry_run, xfce4_config_dir))
         .context("error applying config")?;
 
     Ok(())
