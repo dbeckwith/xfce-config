@@ -24,6 +24,7 @@ struct PluginConfig<'a> {
     file: PluginConfigFile<'a>,
 }
 
+// FIXME: might need to serialize PluginId as string since used as map keys
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize,
 )]
@@ -193,14 +194,20 @@ trait Patch {
     fn is_empty(&self) -> bool;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(bound(
+    serialize = "K: Ord + Serialize, V: Patch + Serialize, V::Data: Serialize"
+))]
 struct MapPatch<K, V>
 where
     K: Ord,
     V: Patch,
 {
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     changed: BTreeMap<K, V>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     added: BTreeMap<K, V::Data>,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     removed: BTreeSet<K>,
 }
 
@@ -237,7 +244,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct PluginConfigsPatch<'a>(
     MapPatch<PluginId<'a>, PluginConfigPatch<'a>>,
 );
@@ -246,9 +253,13 @@ impl<'a> PluginConfigsPatch<'a> {
     pub fn diff(old: PluginConfigs<'a>, new: PluginConfigs<'a>) -> Self {
         Self(MapPatch::diff((old.0).0, (new.0).0))
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 enum PluginConfigPatch<'a> {
     Rc(RcPatch<'a>),
     DesktopDir(DesktopDirPatch<'a>),
@@ -289,16 +300,14 @@ impl<'a> Patch for PluginConfigPatch<'a> {
 
     fn is_empty(&self) -> bool {
         match self {
-            PluginConfigPatch::Rc(rc_patch) => rc_patch.is_empty(),
-            PluginConfigPatch::DesktopDir(desktop_dir_patch) => {
-                desktop_dir_patch.is_empty()
-            },
-            PluginConfigPatch::Changed(_) => false,
+            Self::Rc(rc_patch) => rc_patch.is_empty(),
+            Self::DesktopDir(desktop_dir_patch) => desktop_dir_patch.is_empty(),
+            Self::Changed(_) => false,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct RcPatch<'a> {
     id: PluginId<'a>,
     cfg: CfgPatch<'a>,
@@ -319,7 +328,7 @@ impl<'a> Patch for RcPatch<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct DesktopDirPatch<'a> {
     id: PluginId<'a>,
     files: MapPatch<u64, DesktopFilePatch<'a>>,
@@ -340,7 +349,7 @@ impl<'a> Patch for DesktopDirPatch<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 enum DesktopFilePatch<'a> {
     Cfg(DesktopFileCfgPatch<'a>),
     Link(LinkPatch<'a>),
@@ -384,16 +393,16 @@ impl<'a> Patch for DesktopFilePatch<'a> {
 
     fn is_empty(&self) -> bool {
         match self {
-            DesktopFilePatch::Cfg(desktop_file_cfg_patch) => {
+            Self::Cfg(desktop_file_cfg_patch) => {
                 desktop_file_cfg_patch.is_empty()
             },
-            DesktopFilePatch::Link(link_patch) => link_patch.is_empty(),
-            DesktopFilePatch::Changed(_) => false,
+            Self::Link(link_patch) => link_patch.is_empty(),
+            Self::Changed(_) => false,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct DesktopFileCfgPatch<'a> {
     id: u64,
     cfg: CfgPatch<'a>,
@@ -414,7 +423,7 @@ impl<'a> Patch for DesktopFileCfgPatch<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct LinkPatch<'a> {
     id: u64,
     path: Option<Cow<'a, Path>>,
@@ -611,11 +620,11 @@ impl DesktopFile<'_> {
 impl PluginConfigPatch<'_> {
     fn apply(self, applier: &mut Applier) -> Result<()> {
         match self {
-            PluginConfigPatch::Rc(rc_patch) => rc_patch.apply(applier),
-            PluginConfigPatch::DesktopDir(desktop_dir_patch) => {
+            Self::Rc(rc_patch) => rc_patch.apply(applier),
+            Self::DesktopDir(desktop_dir_patch) => {
                 desktop_dir_patch.apply(applier)
             },
-            PluginConfigPatch::Changed(plugin_config) => {
+            Self::Changed(plugin_config) => {
                 applier.remove_plugin(&plugin_config.id)?;
                 plugin_config.apply(applier)?;
                 Ok(())
@@ -653,13 +662,11 @@ impl DesktopFilePatch<'_> {
         plugin_id: &PluginId<'_>,
     ) -> Result<()> {
         match self {
-            DesktopFilePatch::Cfg(desktop_file_cfg_patch) => {
+            Self::Cfg(desktop_file_cfg_patch) => {
                 desktop_file_cfg_patch.apply(applier, plugin_id)
             },
-            DesktopFilePatch::Link(link_patch) => {
-                link_patch.apply(applier, plugin_id)
-            },
-            DesktopFilePatch::Changed(desktop_file) => {
+            Self::Link(link_patch) => link_patch.apply(applier, plugin_id),
+            Self::Changed(desktop_file) => {
                 desktop_file.apply(applier, plugin_id)
             },
         }

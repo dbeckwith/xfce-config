@@ -46,7 +46,12 @@ fn main() -> Result<()> {
     .context("error writing old.json")?;
 
     let diff = XfceConfigPatch::diff(old_config, new_config);
-    dbg!(&diff);
+    serde_json::to_writer(
+        fs::File::create(log_dir.join("diff.json"))
+            .context("error creating diff.json")?,
+        &diff,
+    )
+    .context("error writing diff.json")?;
 
     diff.apply(&mut Applier::new(dry_run, xfce4_config_dir))
         .context("error applying config")?;

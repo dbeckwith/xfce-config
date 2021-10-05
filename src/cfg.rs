@@ -78,9 +78,11 @@ impl Cfg<'_> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct CfgPatch<'a> {
+    #[serde(skip_serializing_if = "MapPatch::is_empty")]
     root: MapPatch<'a, StrPatch<'a>>,
+    #[serde(skip_serializing_if = "MapPatch::is_empty")]
     sections: MapPatch<'a, MapPatch<'a, StrPatch<'a>>>,
 }
 
@@ -112,12 +114,15 @@ trait Patch {
     fn apply_to_old(self, old: &mut Self::Data);
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(bound(serialize = "T: Patch + Serialize, T::Data: Serialize"))]
 struct MapPatch<'a, T>
 where
     T: Patch,
 {
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     changed: BTreeMap<Cow<'a, str>, T>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     added: BTreeMap<Cow<'a, str>, T::Data>,
 }
 
@@ -159,7 +164,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct StrPatch<'a> {
     value: Option<Cow<'a, str>>,
 }

@@ -515,9 +515,11 @@ impl<'a> crate::serde::Id for Channel<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct ChannelsPatch<'a> {
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     changed: BTreeMap<Cow<'a, str>, ChannelPatch<'a>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     added: Vec<Channel<'a>>,
 }
 
@@ -543,10 +545,13 @@ impl<'a> ChannelsPatch<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct ChannelPatch<'a> {
+    #[serde(skip_serializing_if = "SimplePatch::is_empty")]
     name: SimplePatch<Cow<'a, str>>,
+    #[serde(skip_serializing_if = "SimplePatch::is_empty")]
     version: SimplePatch<Cow<'a, str>>,
+    #[serde(skip_serializing_if = "PropertiesPatch::is_empty")]
     props: PropertiesPatch<'a>,
 }
 
@@ -574,10 +579,13 @@ impl<'a> ChannelPatch<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct PropertiesPatch<'a> {
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     changed: BTreeMap<Cow<'a, str>, ValuePatch<'a>>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     added: BTreeMap<Cow<'a, str>, Value<'a>>,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     removed: BTreeSet<Cow<'a, str>>,
 }
 
@@ -669,9 +677,11 @@ impl<'a> PropertiesPatch<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct ValuePatch<'a> {
+    #[serde(skip_serializing_if = "TypedValuePatch::is_empty")]
     value: TypedValuePatch<'a>,
+    #[serde(skip_serializing_if = "PropertiesPatch::is_empty")]
     props: PropertiesPatch<'a>,
 }
 
@@ -694,7 +704,7 @@ impl<'a> ValuePatch<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 enum TypedValuePatch<'a> {
     Bool(SimplePatch<bool>),
     Int(SimplePatch<i32>),
@@ -743,12 +753,12 @@ impl<'a> TypedValuePatch<'a> {
             Self::String(patch) => patch.is_empty(),
             Self::Array(patch) => patch.is_empty(),
             Self::Empty => true,
-            Self::Changed(_) => true,
+            Self::Changed(_) => false,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct SimplePatch<T> {
     value: Option<T>,
 }

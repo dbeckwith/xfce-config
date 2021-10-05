@@ -20,9 +20,11 @@ pub struct XfceConfig<'a> {
     pub panel_plugin_configs: panel::PluginConfigs<'a>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct XfceConfigPatch<'a> {
+    #[serde(skip_serializing_if = "channel::ChannelsPatch::is_empty")]
     channels: channel::ChannelsPatch<'a>,
+    #[serde(skip_serializing_if = "panel::PluginConfigsPatch::is_empty")]
     panel_plugin_configs: panel::PluginConfigsPatch<'a>,
 }
 
