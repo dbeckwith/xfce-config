@@ -1,4 +1,4 @@
-use crate::{serde::IdMap, PatchRecorder};
+use crate::{dbus::DBus, serde::IdMap, PatchRecorder};
 use anyhow::{anyhow, bail, Context, Result};
 use quick_xml::{
     events::{attributes::Attribute, BytesDecl, BytesStart, Event},
@@ -835,7 +835,7 @@ impl<'a> DiffPath<'a> {
 pub struct Applier<'a> {
     dry_run: bool,
     patch_recorder: &'a mut PatchRecorder,
-    dbus: gio::DBusProxy,
+    dbus: DBus,
 }
 
 impl<'a> Applier<'a> {
@@ -843,16 +843,7 @@ impl<'a> Applier<'a> {
         dry_run: bool,
         patch_recorder: &'a mut PatchRecorder,
     ) -> Result<Self> {
-        let dbus = gio::DBusProxy::for_bus_sync::<gio::Cancellable>(
-            gio::BusType::Session,
-            gio::DBusProxyFlags::NONE,
-            None,
-            "org.xfce.Xfconf",
-            "/org/xfce/Xfconf",
-            "org.xfce.Xfconf",
-            None,
-        )
-        .context("error creating dbus proxy")?;
+        let dbus = DBus::new("org.xfce.Xfconf", "/org/xfce/Xfconf")?;
         Ok(Self {
             dry_run,
             patch_recorder,
@@ -920,15 +911,7 @@ impl<'a> Applier<'a> {
             }))
             .context("error logging xfconf call")?;
         if !self.dry_run {
-            gio::prelude::DBusProxyExt::call_sync::<gio::Cancellable>(
-                &self.dbus,
-                method,
-                Some(&args),
-                gio::DBusCallFlags::NONE,
-                -1,
-                None,
-            )
-            .with_context(|| format!("{}{}", method, args.to_string()))?;
+            self.dbus.call(method, args)?;
         }
         Ok(())
     }

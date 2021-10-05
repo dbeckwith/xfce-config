@@ -2,9 +2,12 @@
 #![deny(clippy::correctness)]
 
 mod cfg;
+mod dbus;
 mod panel;
 mod serde;
 mod xfconf;
+
+pub use dbus::DBus;
 
 use ::serde::{Deserialize, Serialize};
 use anyhow::{Context, Result};

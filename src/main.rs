@@ -4,7 +4,7 @@
 use anyhow::{Context, Result};
 use std::fs;
 use structopt::StructOpt;
-use xfce_config::{Applier, XfceConfig, XfceConfigPatch};
+use xfce_config::{Applier, DBus, XfceConfig, XfceConfigPatch};
 
 #[derive(StructOpt)]
 struct Args {
