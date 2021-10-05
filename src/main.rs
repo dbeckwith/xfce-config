@@ -53,13 +53,15 @@ fn main() -> Result<()> {
     )
     .context("error writing diff.json")?;
 
+    let diff_empty = diff.is_empty();
+
     diff.apply(
         &mut Applier::new(dry_run, &log_dir, xfce4_config_dir)
             .context("error creating applier")?,
     )
     .context("error applying config")?;
 
-    if !dry_run {
+    if !dry_run && !diff_empty {
         DBus::new("org.xfce.Panel", "/org/xfce/Panel")?
             .call("Terminate", (true,))?;
     }
