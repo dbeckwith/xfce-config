@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use cfg_if::cfg_if;
-use serde::{Deserialize, Serialize};
+use serde::{ser, Deserialize, Serialize};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
@@ -24,10 +24,7 @@ struct PluginConfig<'a> {
     file: PluginConfigFile<'a>,
 }
 
-// FIXME: might need to serialize PluginId as string since used as map keys
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 struct PluginId<'a> {
     r#type: Cow<'a, str>,
     id: u64,
@@ -36,6 +33,15 @@ struct PluginId<'a> {
 impl fmt::Display for PluginId<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}-{}", self.r#type, self.id)
+    }
+}
+
+impl ser::Serialize for PluginId<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        serializer.collect_str(&format_args!("{}-{}", self.r#type, self.id))
     }
 }
 
