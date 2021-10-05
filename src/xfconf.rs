@@ -664,6 +664,17 @@ impl<'a> PropertiesPatch<'a> {
                 if old_ctx.value != new_ctx.value;
                 then { return Some(|_key| true); }
             }
+            // remove old keyboard shortcuts
+            if_chain! {
+                if let Some(((_, channel), prop)) = path.channel.as_ref();
+                if channel.name == "xfce4-keyboard-shortcuts";
+                if prop == "xfwm4" || prop == "commands";
+                let mut path_props = path.props.iter();
+                if let Some((_, prop)) = path_props.next();
+                if prop == "custom";
+                if path_props.next().is_none();
+                then { return Some(|_key| true); }
+            }
             None
         })();
         let mut changed = BTreeMap::new();
