@@ -1,3 +1,4 @@
+use crate::PatchRecorder;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -189,22 +190,31 @@ impl<'a> Patch for StrPatch<'a> {
     }
 }
 
-pub struct Applier {
+pub struct Applier<'a> {
     dry_run: bool,
+    patch_recorder: &'a mut PatchRecorder,
     path: PathBuf,
 }
 
-impl Applier {
-    pub fn new(dry_run: bool, path: PathBuf) -> Self {
-        Self { dry_run, path }
+impl<'a> Applier<'a> {
+    pub(crate) fn new(
+        dry_run: bool,
+        patch_recorder: &'a mut PatchRecorder,
+        path: PathBuf,
+    ) -> Self {
+        Self {
+            dry_run,
+            patch_recorder,
+            path,
+        }
     }
 
     fn write_cfg(&mut self, cfg: &Cfg<'_>) -> Result<()> {
-        eprintln!("writing CFG to {}:", self.path.display());
-        eprintln!("====================");
-        cfg.write(std::io::stderr())
-            .context("error writing CFG to stderr")?;
-        eprintln!("====================");
+        self.patch_recorder
+            .log(&crate::PatchEvent::Panel(crate::panel::PatchEvent::Cfg {
+                content: cfg,
+            }))
+            .context("error logging CFG write")?;
         if !self.dry_run {
             cfg.write(
                 fs::File::create(&self.path)
@@ -216,7 +226,6 @@ impl Applier {
     }
 
     fn update_cfg(&mut self, cfg_patch: CfgPatch<'_>) -> Result<()> {
-        eprintln!("updating CFG at {}", self.path.display());
         let mut cfg = Cfg::read(
             fs::File::open(&self.path)
                 .map(io::BufReader::new)
@@ -230,14 +239,14 @@ impl Applier {
 }
 
 impl Cfg<'_> {
-    pub fn apply(self, applier: &mut Applier) -> Result<()> {
+    pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         applier.write_cfg(&self)?;
         Ok(())
     }
 }
 
 impl CfgPatch<'_> {
-    pub fn apply(self, applier: &mut Applier) -> Result<()> {
+    pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         applier.update_cfg(self)?;
         Ok(())
     }

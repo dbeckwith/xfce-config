@@ -53,8 +53,11 @@ fn main() -> Result<()> {
     )
     .context("error writing diff.json")?;
 
-    diff.apply(&mut Applier::new(dry_run, xfce4_config_dir))
-        .context("error applying config")?;
+    diff.apply(
+        &mut Applier::new(dry_run, &log_dir, xfce4_config_dir)
+            .context("error creating applier")?,
+    )
+    .context("error applying config")?;
 
     Ok(())
 }

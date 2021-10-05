@@ -1,23 +1,24 @@
 #![warn(rust_2018_idioms, clippy::all)]
 #![deny(clippy::correctness)]
 
-pub mod cfg;
-pub mod channel;
-pub mod panel;
+mod cfg;
+mod channel;
+mod panel;
 mod serde;
 
 use ::serde::{Deserialize, Serialize};
 use anyhow::{Context, Result};
 use std::{
-    io::Read,
+    fs,
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct XfceConfig<'a> {
-    pub channels: channel::Channels<'a>,
-    pub panel_plugin_configs: panel::PluginConfigs<'a>,
+    channels: channel::Channels<'a>,
+    panel_plugin_configs: panel::PluginConfigs<'a>,
 }
 
 #[derive(Debug, Serialize)]
@@ -69,15 +70,27 @@ impl XfceConfig<'static> {
 
 pub struct Applier {
     dry_run: bool,
+    patch_recorder: PatchRecorder,
     xfce4_config_dir: PathBuf,
 }
 
+struct PatchRecorder {
+    file: fs::File,
+}
+
 impl Applier {
-    pub fn new(dry_run: bool, xfce4_config_dir: PathBuf) -> Self {
-        Self {
+    pub fn new(
+        dry_run: bool,
+        log_dir: &Path,
+        xfce4_config_dir: PathBuf,
+    ) -> Result<Self> {
+        let patch_recorder = PatchRecorder::new(&log_dir.join("patches.json"))
+            .context("error creating patch recorder")?;
+        Ok(Self {
             dry_run,
+            patch_recorder,
             xfce4_config_dir,
-        }
+        })
     }
 }
 
@@ -85,16 +98,40 @@ impl XfceConfigPatch<'_> {
     pub fn apply(self, applier: &mut Applier) -> Result<()> {
         self.channels
             .apply(
-                &mut channel::Applier::new(applier.dry_run)
-                    .context("error creating channels applier")?,
+                &mut channel::Applier::new(
+                    applier.dry_run,
+                    &mut applier.patch_recorder,
+                )
+                .context("error creating channels applier")?,
             )
             .context("error applying channels")?;
         self.panel_plugin_configs
             .apply(&mut panel::Applier::new(
                 applier.dry_run,
+                &mut applier.patch_recorder,
                 applier.xfce4_config_dir.join("panel"),
             ))
             .context("error applying panel plugin configs")?;
         Ok(())
     }
+}
+
+impl PatchRecorder {
+    fn new(path: &Path) -> Result<Self> {
+        let file = fs::File::create(path)?;
+        Ok(Self { file })
+    }
+
+    fn log(&mut self, event: &PatchEvent<'_>) -> Result<()> {
+        serde_json::to_writer(&mut self.file, event)?;
+        writeln!(&mut self.file)?;
+        Ok(())
+    }
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", content = "value", rename_all = "kebab-case")]
+enum PatchEvent<'a> {
+    Channel(channel::PatchEvent<'a>),
+    Panel(panel::PatchEvent<'a>),
 }

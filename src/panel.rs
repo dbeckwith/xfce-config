@@ -1,6 +1,7 @@
 use crate::{
     cfg::{Applier as CfgApplier, Cfg, CfgPatch},
     serde::IdMap,
+    PatchRecorder,
 };
 use anyhow::{bail, Context, Result};
 use cfg_if::cfg_if;
@@ -450,14 +451,27 @@ impl<'a> Patch for LinkPatch<'a> {
     }
 }
 
-pub struct Applier {
+pub struct Applier<'a> {
     dry_run: bool,
+    patch_recorder: &'a mut PatchRecorder,
     dir: PathBuf,
 }
 
-impl Applier {
-    pub fn new(dry_run: bool, dir: PathBuf) -> Self {
-        Self { dry_run, dir }
+impl<'a> Applier<'a> {
+    pub(crate) fn new(
+        dry_run: bool,
+        patch_recorder: &'a mut PatchRecorder,
+        dir: PathBuf,
+    ) -> Self {
+        Self {
+            dry_run,
+            patch_recorder,
+            dir,
+        }
+    }
+
+    fn log(&mut self, event: PatchEvent<'_>) -> Result<()> {
+        self.patch_recorder.log(&crate::PatchEvent::Panel(event))
     }
 
     fn rc_file_path(&self, plugin_id: &PluginId<'_>) -> PathBuf {
@@ -481,17 +495,22 @@ impl Applier {
         ))
     }
 
-    fn rc_cfg_applier(&mut self, plugin_id: &PluginId<'_>) -> CfgApplier {
-        CfgApplier::new(self.dry_run, self.rc_file_path(plugin_id))
+    fn rc_cfg_applier(&mut self, plugin_id: &PluginId<'_>) -> CfgApplier<'_> {
+        CfgApplier::new(
+            self.dry_run,
+            self.patch_recorder,
+            self.rc_file_path(plugin_id),
+        )
     }
 
     fn desktop_cfg_applier(
         &mut self,
         plugin_id: &PluginId<'_>,
         desktop_id: u64,
-    ) -> CfgApplier {
+    ) -> CfgApplier<'_> {
         CfgApplier::new(
             self.dry_run,
+            self.patch_recorder,
             self.desktop_file_path(plugin_id, desktop_id),
         )
     }
@@ -500,19 +519,19 @@ impl Applier {
         let rc_file_path = self.rc_file_path(plugin_id);
         let desktop_dir_path = self.desktop_dir_path(plugin_id);
         if rc_file_path.is_file() {
-            eprintln!(
-                "removing panel plugin RC file {}",
-                rc_file_path.display()
-            );
+            self.log(PatchEvent::RemovePluginRcFile {
+                path: &rc_file_path,
+            })
+            .context("error logging remove plugin RC file")?;
             if !self.dry_run {
                 fs::remove_file(rc_file_path)
                     .context("error removing RC file")?;
             }
         } else if desktop_dir_path.is_dir() {
-            eprintln!(
-                "removing panel plugin desktop dir {}",
-                desktop_dir_path.display()
-            );
+            self.log(PatchEvent::RemovePluginDesktopDir {
+                path: &desktop_dir_path,
+            })
+            .context("error logging remove plugin desktop dir")?;
             if !self.dry_run {
                 fs::remove_dir_all(desktop_dir_path)
                     .context("error removing desktop dir")?;
@@ -525,7 +544,8 @@ impl Applier {
 
     fn create_desktop_dir(&mut self, plugin_id: &PluginId<'_>) -> Result<()> {
         let path = self.desktop_dir_path(plugin_id);
-        eprintln!("creating panel plugin desktop dir {}", path.display());
+        self.log(PatchEvent::CreateDesktopDir { path: &path })
+            .context("error logging create desktop dir")?;
         if !self.dry_run {
             fs::create_dir(path).context("error creating desktop dir")?;
         }
@@ -539,11 +559,11 @@ impl Applier {
         target_path: &Path,
     ) -> Result<()> {
         let path = self.desktop_file_path(plugin_id, desktop_id);
-        eprintln!(
-            "linking panel plugin desktop file {} to {}",
-            path.display(),
-            target_path.display()
-        );
+        self.log(PatchEvent::LinkDesktopFile {
+            path: &path,
+            target_path,
+        })
+        .context("error logging link desktop file")?;
         if !self.dry_run {
             {
                 cfg_if! {
@@ -566,7 +586,8 @@ impl Applier {
         desktop_id: u64,
     ) -> Result<()> {
         let path = self.desktop_file_path(plugin_id, desktop_id);
-        eprintln!("removing panel plugin desktop file {}", path.display());
+        self.log(PatchEvent::RemoveDesktopFile { path: &path })
+            .context("error logging remove desktop file")?;
         if !self.dry_run {
             fs::remove_file(path).context("error removing desktop file")?;
         }
@@ -574,8 +595,28 @@ impl Applier {
     }
 }
 
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum PatchEvent<'a> {
+    #[serde(rename_all = "kebab-case")]
+    Cfg { content: &'a Cfg<'a> },
+    #[serde(rename_all = "kebab-case")]
+    RemovePluginRcFile { path: &'a Path },
+    #[serde(rename_all = "kebab-case")]
+    RemovePluginDesktopDir { path: &'a Path },
+    #[serde(rename_all = "kebab-case")]
+    CreateDesktopDir { path: &'a Path },
+    #[serde(rename_all = "kebab-case")]
+    LinkDesktopFile {
+        path: &'a Path,
+        target_path: &'a Path,
+    },
+    #[serde(rename_all = "kebab-case")]
+    RemoveDesktopFile { path: &'a Path },
+}
+
 impl PluginConfigsPatch<'_> {
-    pub fn apply(self, applier: &mut Applier) -> Result<()> {
+    pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         for plugin_config_patch in self.0.changed.into_values() {
             plugin_config_patch.apply(applier)?;
         }
@@ -590,7 +631,7 @@ impl PluginConfigsPatch<'_> {
 }
 
 impl PluginConfig<'_> {
-    fn apply(self, applier: &mut Applier) -> Result<()> {
+    fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         match self.file {
             PluginConfigFile::Rc(cfg) => {
                 cfg.apply(&mut applier.rc_cfg_applier(&self.id))
@@ -609,7 +650,7 @@ impl PluginConfig<'_> {
 impl DesktopFile<'_> {
     fn apply(
         self,
-        applier: &mut Applier,
+        applier: &mut Applier<'_>,
         plugin_id: &PluginId<'_>,
     ) -> Result<()> {
         match self.content {
@@ -624,7 +665,7 @@ impl DesktopFile<'_> {
 }
 
 impl PluginConfigPatch<'_> {
-    fn apply(self, applier: &mut Applier) -> Result<()> {
+    fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         match self {
             Self::Rc(rc_patch) => rc_patch.apply(applier),
             Self::DesktopDir(desktop_dir_patch) => {
@@ -640,14 +681,14 @@ impl PluginConfigPatch<'_> {
 }
 
 impl RcPatch<'_> {
-    fn apply(self, applier: &mut Applier) -> Result<()> {
+    fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         self.cfg.apply(&mut applier.rc_cfg_applier(&self.id))?;
         Ok(())
     }
 }
 
 impl DesktopDirPatch<'_> {
-    fn apply(self, applier: &mut Applier) -> Result<()> {
+    fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         for desktop_file_patch in self.files.changed.into_values() {
             desktop_file_patch.apply(applier, &self.id)?;
         }
@@ -664,7 +705,7 @@ impl DesktopDirPatch<'_> {
 impl DesktopFilePatch<'_> {
     fn apply(
         self,
-        applier: &mut Applier,
+        applier: &mut Applier<'_>,
         plugin_id: &PluginId<'_>,
     ) -> Result<()> {
         match self {
@@ -682,7 +723,7 @@ impl DesktopFilePatch<'_> {
 impl DesktopFileCfgPatch<'_> {
     fn apply(
         self,
-        applier: &mut Applier,
+        applier: &mut Applier<'_>,
         plugin_id: &PluginId<'_>,
     ) -> Result<()> {
         self.cfg
@@ -693,7 +734,7 @@ impl DesktopFileCfgPatch<'_> {
 impl LinkPatch<'_> {
     fn apply(
         self,
-        applier: &mut Applier,
+        applier: &mut Applier<'_>,
         plugin_id: &PluginId<'_>,
     ) -> Result<()> {
         if let Some(path) = self.path {

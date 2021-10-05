@@ -1,4 +1,4 @@
-use crate::serde::IdMap;
+use crate::{serde::IdMap, PatchRecorder};
 use anyhow::{anyhow, bail, Context, Result};
 use quick_xml::{
     events::{attributes::Attribute, BytesDecl, BytesStart, Event},
@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
-    fmt,
     fs,
     io,
     io::{BufRead, Write},
@@ -801,14 +800,17 @@ impl<'a> DiffPath<'a> {
     }
 }
 
-pub struct Applier {
+pub struct Applier<'a> {
     dry_run: bool,
+    patch_recorder: &'a mut PatchRecorder,
     dbus: gio::DBusProxy,
 }
 
-impl Applier {
-    #[allow(clippy::new_without_default)]
-    pub fn new(dry_run: bool) -> Result<Self> {
+impl<'a> Applier<'a> {
+    pub(crate) fn new(
+        dry_run: bool,
+        patch_recorder: &'a mut PatchRecorder,
+    ) -> Result<Self> {
         let dbus = gio::DBusProxy::for_bus_sync::<gio::Cancellable>(
             gio::BusType::Session,
             gio::DBusProxyFlags::NONE,
@@ -819,12 +821,16 @@ impl Applier {
             None,
         )
         .context("error creating dbus proxy")?;
-        Ok(Self { dry_run, dbus })
+        Ok(Self {
+            dry_run,
+            patch_recorder,
+            dbus,
+        })
     }
 
-    fn path_to_channel_property<'a>(
-        path: &'a ApplyPath<'_>,
-    ) -> (&'a str, String) {
+    fn path_to_channel_property<'p>(
+        path: &'p ApplyPath<'_>,
+    ) -> (&'p str, String) {
         (
             &*path.channel,
             path.props
@@ -837,10 +843,50 @@ impl Applier {
     fn call(
         &mut self,
         method: &'static str,
-        args: impl glib::variant::ToVariant + fmt::Debug,
+        args: impl glib::variant::ToVariant,
     ) -> Result<()> {
         let args = args.to_variant();
-        eprintln!("call {}{}", method, args.to_string());
+        assert!(args.is_container());
+        self.patch_recorder
+            .log(&crate::PatchEvent::Channel(PatchEvent::XfconfCall {
+                method,
+                args: args
+                    .iter()
+                    .map({
+                        fn variant_to_json(
+                            v: glib::Variant,
+                        ) -> Result<serde_json::Value> {
+                            match v.type_().to_str() {
+                                "v" => variant_to_json(v.as_variant().unwrap()),
+                                "b" => Ok(serde_json::Value::from(
+                                    v.get::<bool>().unwrap(),
+                                )),
+                                "i" => Ok(serde_json::Value::from(
+                                    v.get::<i32>().unwrap(),
+                                )),
+                                "u" => Ok(serde_json::Value::from(
+                                    v.get::<u32>().unwrap(),
+                                )),
+                                "d" => Ok(serde_json::Value::from(
+                                    v.get::<f64>().unwrap(),
+                                )),
+                                "s" => Ok(serde_json::Value::from(
+                                    v.get::<String>().unwrap(),
+                                )),
+                                "av" => Ok(serde_json::Value::from(
+                                    v.iter()
+                                        .map(variant_to_json)
+                                        .collect::<Result<Vec<_>>>()?,
+                                )),
+                                r#type => bail!("bad arg type {}", r#type),
+                            }
+                        }
+                        variant_to_json
+                    })
+                    .collect::<Result<Vec<_>>>()
+                    .context("error building xfconf call log")?,
+            }))
+            .context("error logging xfconf call")?;
         if !self.dry_run {
             gio::prelude::DBusProxyExt::call_sync::<gio::Cancellable>(
                 &self.dbus,
@@ -928,12 +974,23 @@ impl Applier {
 
     fn remove(&mut self, path: &ApplyPath<'_>) -> Result<()> {
         let (channel, property) = Self::path_to_channel_property(path);
-        self.call("ResetProperty", &(channel, property, true))
+        let recursive = true;
+        self.call("ResetProperty", &(channel, property, recursive))
     }
 }
 
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum PatchEvent<'a> {
+    #[serde(rename_all = "kebab-case")]
+    XfconfCall {
+        method: &'a str,
+        args: Vec<serde_json::Value>,
+    },
+}
+
 impl ChannelsPatch<'_> {
-    pub fn apply(self, applier: &mut Applier) -> Result<()> {
+    pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         for (name, channel_patch) in self.changed {
             channel_patch.apply(applier, name)?;
         }
@@ -959,7 +1016,7 @@ impl<'a> ApplyPath<'a> {
 }
 
 impl Channel<'_> {
-    fn apply(self, applier: &mut Applier) -> Result<()> {
+    fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         let path = ApplyPath {
             channel: self.name,
             props: im::Vector::new(),
@@ -970,7 +1027,11 @@ impl Channel<'_> {
 }
 
 impl<'a> Properties<'a> {
-    fn apply(self, applier: &mut Applier, path: &ApplyPath<'a>) -> Result<()> {
+    fn apply(
+        self,
+        applier: &mut Applier<'_>,
+        path: &ApplyPath<'a>,
+    ) -> Result<()> {
         for (name, value) in self.0 {
             let path = path.push(name);
             value.apply(applier, &path)?;
@@ -980,7 +1041,11 @@ impl<'a> Properties<'a> {
 }
 
 impl<'a> Value<'a> {
-    fn apply(self, applier: &mut Applier, path: &ApplyPath<'a>) -> Result<()> {
+    fn apply(
+        self,
+        applier: &mut Applier<'_>,
+        path: &ApplyPath<'a>,
+    ) -> Result<()> {
         self.value.apply(applier, path)?;
         self.props.apply(applier, path)?;
         Ok(())
@@ -988,7 +1053,11 @@ impl<'a> Value<'a> {
 }
 
 impl<'a> TypedValue<'a> {
-    fn apply(self, applier: &mut Applier, path: &ApplyPath<'a>) -> Result<()> {
+    fn apply(
+        self,
+        applier: &mut Applier<'_>,
+        path: &ApplyPath<'a>,
+    ) -> Result<()> {
         match self {
             Self::Bool(value) => applier.set_bool(path, value),
             Self::Int(value) => applier.set_int(path, value),
@@ -1002,7 +1071,11 @@ impl<'a> TypedValue<'a> {
 }
 
 impl<'a> ChannelPatch<'a> {
-    fn apply(self, applier: &mut Applier, name: Cow<'a, str>) -> Result<()> {
+    fn apply(
+        self,
+        applier: &mut Applier<'_>,
+        name: Cow<'a, str>,
+    ) -> Result<()> {
         let path = ApplyPath {
             channel: name,
             props: im::Vector::new(),
@@ -1013,7 +1086,11 @@ impl<'a> ChannelPatch<'a> {
 }
 
 impl<'a> PropertiesPatch<'a> {
-    fn apply(self, applier: &mut Applier, path: &ApplyPath<'a>) -> Result<()> {
+    fn apply(
+        self,
+        applier: &mut Applier<'_>,
+        path: &ApplyPath<'a>,
+    ) -> Result<()> {
         // keys of changed, added, removed are disjoint so order doesn't matter
         for (name, value_patch) in self.changed {
             let path = path.push(name);
@@ -1032,7 +1109,11 @@ impl<'a> PropertiesPatch<'a> {
 }
 
 impl<'a> ValuePatch<'a> {
-    fn apply(self, applier: &mut Applier, path: &ApplyPath<'a>) -> Result<()> {
+    fn apply(
+        self,
+        applier: &mut Applier<'_>,
+        path: &ApplyPath<'a>,
+    ) -> Result<()> {
         self.value.apply(applier, path)?;
         self.props.apply(applier, path)?;
         Ok(())
@@ -1040,7 +1121,11 @@ impl<'a> ValuePatch<'a> {
 }
 
 impl<'a> TypedValuePatch<'a> {
-    fn apply(self, applier: &mut Applier, path: &ApplyPath<'a>) -> Result<()> {
+    fn apply(
+        self,
+        applier: &mut Applier<'_>,
+        path: &ApplyPath<'a>,
+    ) -> Result<()> {
         match self {
             Self::Bool(value_patch) => value_patch.apply(applier, path),
             Self::Int(value_patch) => value_patch.apply(applier, path),
@@ -1059,7 +1144,7 @@ macro_rules! impl_simple_patch_apply {
         impl SimplePatch<$ty> {
             fn apply(
                 self,
-                applier: &mut Applier,
+                applier: &mut Applier<'_>,
                 path: &ApplyPath<'_>,
             ) -> Result<()> {
                 if let Some(value) = self.value {
