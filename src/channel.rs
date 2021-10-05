@@ -5,7 +5,7 @@ use quick_xml::{
     Reader,
     Writer,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
@@ -16,10 +16,10 @@ use std::{
     path::Path,
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Channels<'a>(IdMap<Channel<'a>>);
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Channel<'a> {
     name: Cow<'a, str>,
     version: Cow<'a, str>,
@@ -27,10 +27,10 @@ struct Channel<'a> {
     props: Properties<'a>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 struct Properties<'a>(BTreeMap<Cow<'a, str>, Value<'a>>);
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Value<'a> {
     #[serde(flatten)]
     value: TypedValue<'a>,
@@ -38,7 +38,7 @@ struct Value<'a> {
     props: Properties<'a>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "kebab-case")]
 enum TypedValue<'a> {
     Bool(bool),

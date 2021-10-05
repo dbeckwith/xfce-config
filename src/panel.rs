@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use cfg_if::cfg_if;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
@@ -14,17 +14,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PluginConfigs<'a>(IdMap<PluginConfig<'a>>);
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct PluginConfig<'a> {
     #[serde(rename = "plugin")]
     id: PluginId<'a>,
     file: PluginConfigFile<'a>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize,
+)]
 struct PluginId<'a> {
     r#type: Cow<'a, str>,
     id: u64,
@@ -36,32 +38,32 @@ impl fmt::Display for PluginId<'_> {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum PluginConfigFile<'a> {
     Rc(Cfg<'a>),
     DesktopDir(DesktopDir<'a>),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct DesktopDir<'a> {
     files: IdMap<DesktopFile<'a>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct DesktopFile<'a> {
     id: u64,
     content: DesktopFileContent<'a>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum DesktopFileContent<'a> {
     Cfg(Cfg<'a>),
     Link(Link<'a>),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Link<'a> {
     path: Cow<'a, Path>,
 }

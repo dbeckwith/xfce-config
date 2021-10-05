@@ -6,14 +6,14 @@ pub mod channel;
 pub mod panel;
 mod serde;
 
-use ::serde::Deserialize;
+use ::serde::{Deserialize, Serialize};
 use anyhow::{Context, Result};
 use std::{
     io::Read,
     path::{Path, PathBuf},
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct XfceConfig<'a> {
     pub channels: channel::Channels<'a>,

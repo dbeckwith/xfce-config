@@ -1,4 +1,4 @@
-use serde::de;
+use serde::{de, ser};
 use std::collections::BTreeMap;
 
 pub trait Id {
@@ -11,6 +11,19 @@ pub trait Id {
 pub struct IdMap<T>(pub BTreeMap<T::Id, T>)
 where
     T: Id;
+
+impl<T> ser::Serialize for IdMap<T>
+where
+    T: ser::Serialize + Id,
+    T::Id: ser::Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        serializer.collect_seq(self.0.values())
+    }
+}
 
 impl<'de, T> de::Deserialize<'de> for IdMap<T>
 where

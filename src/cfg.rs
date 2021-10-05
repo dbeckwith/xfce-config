@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
     collections::BTreeMap,
@@ -8,11 +8,11 @@ use std::{
     path::PathBuf,
 };
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Cfg<'a> {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub root: BTreeMap<Cow<'a, str>, Cow<'a, str>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sections: BTreeMap<Cow<'a, str>, BTreeMap<Cow<'a, str>, Cow<'a, str>>>,
 }
 
