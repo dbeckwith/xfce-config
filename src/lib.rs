@@ -2,9 +2,9 @@
 #![deny(clippy::correctness)]
 
 mod cfg;
-mod channel;
 mod panel;
 mod serde;
+mod xfconf;
 
 use ::serde::{Deserialize, Serialize};
 use anyhow::{Context, Result};
@@ -17,31 +17,28 @@ use std::{
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct XfceConfig<'a> {
-    channels: channel::Channels<'a>,
-    panel_plugin_configs: panel::PluginConfigs<'a>,
+    xfconf: xfconf::Xfconf<'a>,
+    panel: panel::Panel<'a>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct XfceConfigPatch<'a> {
-    #[serde(skip_serializing_if = "channel::ChannelsPatch::is_empty")]
-    channels: channel::ChannelsPatch<'a>,
-    #[serde(skip_serializing_if = "panel::PluginConfigsPatch::is_empty")]
-    panel_plugin_configs: panel::PluginConfigsPatch<'a>,
+    #[serde(skip_serializing_if = "xfconf::XfconfPatch::is_empty")]
+    xfconf: xfconf::XfconfPatch<'a>,
+    #[serde(skip_serializing_if = "panel::PanelPatch::is_empty")]
+    panel: panel::PanelPatch<'a>,
 }
 
 impl<'a> XfceConfigPatch<'a> {
     pub fn diff(old: XfceConfig<'a>, new: XfceConfig<'a>) -> Self {
         XfceConfigPatch {
-            channels: channel::ChannelsPatch::diff(old.channels, new.channels),
-            panel_plugin_configs: panel::PluginConfigsPatch::diff(
-                old.panel_plugin_configs,
-                new.panel_plugin_configs,
-            ),
+            xfconf: xfconf::XfconfPatch::diff(old.xfconf, new.xfconf),
+            panel: panel::PanelPatch::diff(old.panel, new.panel),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.channels.is_empty()
+        self.xfconf.is_empty() && self.panel.is_empty()
     }
 }
 
@@ -54,17 +51,11 @@ impl XfceConfig<'static> {
     }
 
     pub fn from_env(xfce4_config_dir: &Path) -> Result<Self> {
-        let channels = channel::Channels::read(
-            &xfce4_config_dir.join("xfconf/xfce-perchannel-xml"),
-        )
-        .context("error loading channels data")?;
-        let panel_plugin_configs =
-            panel::PluginConfigs::read(&xfce4_config_dir.join("panel"))
-                .context("error loading panel plugins data")?;
-        Ok(Self {
-            channels,
-            panel_plugin_configs,
-        })
+        let xfconf = xfconf::Xfconf::read(&xfce4_config_dir.join("xfconf"))
+            .context("error loading xfconf data")?;
+        let panel = panel::Panel::read(&xfce4_config_dir.join("panel"))
+            .context("error loading panel data")?;
+        Ok(Self { xfconf, panel })
     }
 }
 
@@ -96,22 +87,22 @@ impl Applier {
 
 impl XfceConfigPatch<'_> {
     pub fn apply(self, applier: &mut Applier) -> Result<()> {
-        self.channels
+        self.xfconf
             .apply(
-                &mut channel::Applier::new(
+                &mut xfconf::Applier::new(
                     applier.dry_run,
                     &mut applier.patch_recorder,
                 )
-                .context("error creating channels applier")?,
+                .context("error creating xfconf applier")?,
             )
-            .context("error applying channels")?;
-        self.panel_plugin_configs
+            .context("error applying xfconf")?;
+        self.panel
             .apply(&mut panel::Applier::new(
                 applier.dry_run,
                 &mut applier.patch_recorder,
                 applier.xfce4_config_dir.join("panel"),
             ))
-            .context("error applying panel plugin configs")?;
+            .context("error applying panel")?;
         Ok(())
     }
 }
@@ -132,6 +123,6 @@ impl PatchRecorder {
 #[derive(Serialize)]
 #[serde(tag = "type", content = "value", rename_all = "kebab-case")]
 enum PatchEvent<'a> {
-    Channel(channel::PatchEvent<'a>),
+    Channel(xfconf::PatchEvent<'a>),
     Panel(panel::PatchEvent<'a>),
 }

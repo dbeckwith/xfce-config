@@ -16,7 +16,13 @@ use std::{
 };
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct PluginConfigs<'a>(IdMap<PluginConfig<'a>>);
+#[serde(rename_all = "kebab-case")]
+pub struct Panel<'a> {
+    plugin_configs: PluginConfigs<'a>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PluginConfigs<'a>(IdMap<PluginConfig<'a>>);
 
 #[derive(Debug, Serialize, Deserialize)]
 struct PluginConfig<'a> {
@@ -76,8 +82,17 @@ struct Link<'a> {
     path: Cow<'a, Path>,
 }
 
-impl PluginConfigs<'static> {
+impl Panel<'static> {
     pub fn read(dir: &Path) -> Result<Self> {
+        Ok(Self {
+            plugin_configs: PluginConfigs::read(dir)
+                .context("error reading plugin configs")?,
+        })
+    }
+}
+
+impl PluginConfigs<'static> {
+    fn read(dir: &Path) -> Result<Self> {
         dir.read_dir()
             .context("error reading dir")?
             .map(|entry| {
@@ -252,16 +267,35 @@ where
 }
 
 #[derive(Debug, Serialize)]
-pub struct PluginConfigsPatch<'a>(
-    MapPatch<PluginId<'a>, PluginConfigPatch<'a>>,
-);
+pub struct PanelPatch<'a> {
+    #[serde(skip_serializing_if = "PluginConfigsPatch::is_empty")]
+    plugin_configs: PluginConfigsPatch<'a>,
+}
 
-impl<'a> PluginConfigsPatch<'a> {
-    pub fn diff(old: PluginConfigs<'a>, new: PluginConfigs<'a>) -> Self {
-        Self(MapPatch::diff((old.0).0, (new.0).0))
+impl<'a> PanelPatch<'a> {
+    pub fn diff(old: Panel<'a>, new: Panel<'a>) -> Self {
+        Self {
+            plugin_configs: PluginConfigsPatch::diff(
+                old.plugin_configs,
+                new.plugin_configs,
+            ),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
+        self.plugin_configs.is_empty()
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct PluginConfigsPatch<'a>(MapPatch<PluginId<'a>, PluginConfigPatch<'a>>);
+
+impl<'a> PluginConfigsPatch<'a> {
+    fn diff(old: PluginConfigs<'a>, new: PluginConfigs<'a>) -> Self {
+        Self(MapPatch::diff((old.0).0, (new.0).0))
+    }
+
+    fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 }
@@ -615,8 +649,15 @@ pub enum PatchEvent<'a> {
     RemoveDesktopFile { path: &'a Path },
 }
 
-impl PluginConfigsPatch<'_> {
+impl PanelPatch<'_> {
     pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
+        self.plugin_configs.apply(applier)?;
+        Ok(())
+    }
+}
+
+impl PluginConfigsPatch<'_> {
+    fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         for plugin_config_patch in self.0.changed.into_values() {
             plugin_config_patch.apply(applier)?;
         }

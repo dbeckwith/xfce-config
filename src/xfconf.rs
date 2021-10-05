@@ -16,7 +16,12 @@ use std::{
 };
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Channels<'a>(IdMap<Channel<'a>>);
+pub struct Xfconf<'a> {
+    channels: Channels<'a>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Channels<'a>(IdMap<Channel<'a>>);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Channel<'a> {
@@ -49,8 +54,17 @@ enum TypedValue<'a> {
     Empty,
 }
 
-impl Channels<'_> {
+impl Xfconf<'_> {
     pub fn read(dir: &Path) -> Result<Self> {
+        Ok(Self {
+            channels: Channels::read(&dir.join("xfce-perchannel-xml"))
+                .context("error reading channels")?,
+        })
+    }
+}
+
+impl Channels<'_> {
+    fn read(dir: &Path) -> Result<Self> {
         dir.read_dir()
             .context("error reading dir")?
             .map(|entry| {
@@ -515,7 +529,25 @@ impl<'a> crate::serde::Id for Channel<'a> {
 }
 
 #[derive(Debug, Serialize)]
-pub struct ChannelsPatch<'a> {
+pub struct XfconfPatch<'a> {
+    #[serde(skip_serializing_if = "ChannelsPatch::is_empty")]
+    channels: ChannelsPatch<'a>,
+}
+
+impl<'a> XfconfPatch<'a> {
+    pub fn diff(old: Xfconf<'a>, new: Xfconf<'a>) -> Self {
+        Self {
+            channels: ChannelsPatch::diff(old.channels, new.channels),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.channels.is_empty()
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ChannelsPatch<'a> {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     changed: BTreeMap<Cow<'a, str>, ChannelPatch<'a>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -523,7 +555,7 @@ pub struct ChannelsPatch<'a> {
 }
 
 impl<'a> ChannelsPatch<'a> {
-    pub fn diff(mut old: Channels<'a>, new: Channels<'a>) -> Self {
+    fn diff(mut old: Channels<'a>, new: Channels<'a>) -> Self {
         let mut changed = BTreeMap::new();
         let mut added = Vec::new();
         for (key, new_value) in (new.0).0.into_iter() {
@@ -539,7 +571,7 @@ impl<'a> ChannelsPatch<'a> {
         Self { changed, added }
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.changed.is_empty() && self.added.is_empty()
     }
 }
@@ -989,8 +1021,15 @@ pub enum PatchEvent<'a> {
     },
 }
 
-impl ChannelsPatch<'_> {
+impl XfconfPatch<'_> {
     pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
+        self.channels.apply(applier)?;
+        Ok(())
+    }
+}
+
+impl ChannelsPatch<'_> {
+    fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         for (name, channel_patch) in self.changed {
             channel_patch.apply(applier, name)?;
         }
