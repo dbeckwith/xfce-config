@@ -871,46 +871,11 @@ impl<'a> Applier<'a> {
         method: &'static str,
         args: impl glib::variant::ToVariant,
     ) -> Result<()> {
-        let args = args.to_variant();
-        assert!(args.is_container());
         self.patch_recorder
             .log(&crate::PatchEvent::Channel(PatchEvent::XfconfCall {
                 method,
-                args: args
-                    .iter()
-                    .map({
-                        fn variant_to_json(
-                            v: glib::Variant,
-                        ) -> Result<serde_json::Value> {
-                            match v.type_().to_str() {
-                                "v" => variant_to_json(v.as_variant().unwrap()),
-                                "b" => Ok(serde_json::Value::from(
-                                    v.get::<bool>().unwrap(),
-                                )),
-                                "i" => Ok(serde_json::Value::from(
-                                    v.get::<i32>().unwrap(),
-                                )),
-                                "u" => Ok(serde_json::Value::from(
-                                    v.get::<u32>().unwrap(),
-                                )),
-                                "d" => Ok(serde_json::Value::from(
-                                    v.get::<f64>().unwrap(),
-                                )),
-                                "s" => Ok(serde_json::Value::from(
-                                    v.get::<String>().unwrap(),
-                                )),
-                                "av" => Ok(serde_json::Value::from(
-                                    v.iter()
-                                        .map(variant_to_json)
-                                        .collect::<Result<Vec<_>>>()?,
-                                )),
-                                r#type => bail!("bad arg type {}", r#type),
-                            }
-                        }
-                        variant_to_json
-                    })
-                    .collect::<Result<Vec<_>>>()
-                    .context("error building xfconf call log")?,
+                args: variant_to_json(args.to_variant())
+                    .context("error converting xfconf call args to JSON")?,
             }))
             .context("error logging xfconf call")?;
         if !self.dry_run {
@@ -1003,7 +968,7 @@ pub enum PatchEvent<'a> {
     #[serde(rename_all = "kebab-case")]
     XfconfCall {
         method: &'a str,
-        args: Vec<serde_json::Value>,
+        args: serde_json::Value,
     },
 }
 
@@ -1187,6 +1152,21 @@ impl_simple_patch_apply!(u32, set_uint);
 impl_simple_patch_apply!(f64, set_double);
 impl_simple_patch_apply!(Cow<'_, str>, set_string);
 impl_simple_patch_apply!(Vec<Value<'_>>, set_array);
+
+fn variant_to_json(v: glib::Variant) -> Result<serde_json::Value> {
+    match v.type_().to_str() {
+        "v" => variant_to_json(v.as_variant().unwrap()),
+        "b" => Ok(serde_json::Value::from(v.get::<bool>().unwrap())),
+        "i" => Ok(serde_json::Value::from(v.get::<i32>().unwrap())),
+        "u" => Ok(serde_json::Value::from(v.get::<u32>().unwrap())),
+        "d" => Ok(serde_json::Value::from(v.get::<f64>().unwrap())),
+        "s" => Ok(serde_json::Value::from(v.get::<String>().unwrap())),
+        "av" => Ok(serde_json::Value::from(
+            v.iter().map(variant_to_json).collect::<Result<Vec<_>>>()?,
+        )),
+        r#type => bail!("bad arg type {}", r#type),
+    }
+}
 
 #[cfg(test)]
 mod tests {

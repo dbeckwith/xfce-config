@@ -27,7 +27,6 @@ impl DBus {
         args: impl glib::variant::ToVariant,
     ) -> Result<()> {
         let args = args.to_variant();
-        assert!(args.is_container());
         gio::prelude::DBusProxyExt::call_sync::<gio::Cancellable>(
             &self.proxy,
             method,
