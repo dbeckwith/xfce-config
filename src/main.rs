@@ -59,5 +59,10 @@ fn main() -> Result<()> {
     )
     .context("error applying config")?;
 
+    if !dry_run {
+        DBus::new("org.xfce.Panel", "/org/xfce/Panel")?
+            .call("Terminate", (true,))?;
+    }
+
     Ok(())
 }
