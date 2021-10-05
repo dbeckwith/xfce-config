@@ -632,7 +632,7 @@ impl<'a> PropertiesPatch<'a> {
         path: &DiffPath<'a>,
         ctx: PropertiesCtx<'a>,
     ) -> Self {
-        let remove_old = (|| {
+        let remove_old = (|| -> Option<fn(&Cow<'_, str>) -> bool> {
             use if_chain::if_chain;
             // remove old panels
             if_chain! {
@@ -641,7 +641,7 @@ impl<'a> PropertiesPatch<'a> {
                 if prop == "panels";
                 let mut path_props = path.props.iter();
                 if path_props.next().is_none();
-                then { return true; }
+                then { return Some(|key| key.starts_with("panel-")); }
             }
             // remove old plugins
             if_chain! {
@@ -650,7 +650,7 @@ impl<'a> PropertiesPatch<'a> {
                 if prop == "plugins";
                 let mut path_props = path.props.iter();
                 if path_props.next().is_none();
-                then { return true; }
+                then { return Some(|_key| true); }
             }
             // remove old props when plugin type changes
             if_chain! {
@@ -662,9 +662,9 @@ impl<'a> PropertiesPatch<'a> {
                 if path_props.next().is_none();
                 if let PropertiesCtx::Value(old_ctx, new_ctx) = &ctx;
                 if old_ctx.value != new_ctx.value;
-                then { return true; }
+                then { return Some(|_key| true); }
             }
-            false
+            None
         })();
         let mut changed = BTreeMap::new();
         let mut added = BTreeMap::new();
@@ -689,8 +689,11 @@ impl<'a> PropertiesPatch<'a> {
                 added.insert(key, new_value);
             }
         }
-        let removed = if remove_old {
-            old.0.into_keys().collect::<BTreeSet<_>>()
+        let removed = if let Some(remove_old) = remove_old {
+            old.0
+                .into_keys()
+                .filter(remove_old)
+                .collect::<BTreeSet<_>>()
         } else {
             BTreeSet::new()
         };
