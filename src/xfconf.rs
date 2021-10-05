@@ -1161,9 +1161,11 @@ fn variant_to_json(v: glib::Variant) -> Result<serde_json::Value> {
         "u" => Ok(serde_json::Value::from(v.get::<u32>().unwrap())),
         "d" => Ok(serde_json::Value::from(v.get::<f64>().unwrap())),
         "s" => Ok(serde_json::Value::from(v.get::<String>().unwrap())),
-        "av" => Ok(serde_json::Value::from(
-            v.iter().map(variant_to_json).collect::<Result<Vec<_>>>()?,
-        )),
+        r#type if r#type.starts_with('a') || r#type.starts_with('(') => v
+            .iter()
+            .map(variant_to_json)
+            .collect::<Result<Vec<_>>>()
+            .map(Into::into),
         r#type => bail!("bad arg type {}", r#type),
     }
 }
