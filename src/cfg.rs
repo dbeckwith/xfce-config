@@ -216,6 +216,15 @@ impl<'a> Applier<'a> {
             }))
             .context("error logging CFG write")?;
         if !self.dry_run {
+            fs::remove_file(&self.path)
+                .or_else(|error| {
+                    if error.kind() == io::ErrorKind::NotFound {
+                        Ok(())
+                    } else {
+                        Err(error)
+                    }
+                })
+                .context("error removing existing CFG file")?;
             cfg.write(
                 fs::File::create(&self.path)
                     .context("error creating CFG file")?,
