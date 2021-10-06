@@ -12,6 +12,7 @@ use std::{
     fs,
     io,
     io::{BufRead, Write},
+    iter,
     path::Path,
 };
 
@@ -52,6 +53,25 @@ enum TypedValue<'a> {
     String(Cow<'a, str>),
     Array(Vec<Value<'a>>),
     Empty,
+}
+
+#[derive(Debug)]
+pub struct ClearPath<'a> {
+    channel: Cow<'a, str>,
+    parts: Vec<ClearPathPart<'a>>,
+    props: ClearPathProps<'a>,
+}
+
+#[derive(Debug)]
+struct ClearPathPart<'a> {
+    prop: Cow<'a, str>,
+    prefix: bool,
+}
+
+#[derive(Debug)]
+struct ClearPathProps<'a> {
+    value_changed: bool,
+    prefix: Option<Cow<'a, str>>,
 }
 
 impl Xfconf<'_> {
@@ -528,6 +548,54 @@ impl<'a> crate::serde::Id for Channel<'a> {
     }
 }
 
+impl ClearPath<'static> {
+    pub fn parse(input: &str) -> Result<Self> {
+        let mut input_parts = input.split('.').peekable();
+        let channel = input_parts.next().context("missing channel")?;
+        let mut parts = Vec::new();
+        let mut props = None;
+        while let Some(part) = input_parts.next() {
+            if input_parts.peek().is_none() {
+                let (part, value_changed) =
+                    if let Some(part) = part.strip_prefix('~') {
+                        (part, true)
+                    } else {
+                        (part, false)
+                    };
+                let prefix = if let Some(prefix) = part.strip_suffix('*') {
+                    (!prefix.is_empty()).then(|| prefix)
+                } else {
+                    bail!("missing `*` in final prop specifier")
+                };
+                props = Some(ClearPathProps {
+                    value_changed,
+                    prefix: prefix.map(|prefix| prefix.to_owned().into()),
+                });
+            } else {
+                let (prop, prefix) = if let Some(prop) = part.strip_suffix('*')
+                {
+                    (prop, true)
+                } else {
+                    (part, false)
+                };
+                parts.push(ClearPathPart {
+                    prop: prop.to_owned().into(),
+                    prefix,
+                });
+            }
+        }
+        if parts.is_empty() {
+            bail!("missing root prop");
+        }
+        let props = props.context("missing final prop specifier")?;
+        Ok(Self {
+            channel: channel.to_owned().into(),
+            parts,
+            props,
+        })
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct XfconfPatch<'a> {
     #[serde(skip_serializing_if = "ChannelsPatch::is_empty")]
@@ -535,9 +603,17 @@ pub struct XfconfPatch<'a> {
 }
 
 impl<'a> XfconfPatch<'a> {
-    pub fn diff(old: Xfconf<'a>, new: Xfconf<'a>) -> Self {
+    pub fn diff(
+        old: Xfconf<'a>,
+        new: Xfconf<'a>,
+        clear_paths: &[ClearPath<'_>],
+    ) -> Self {
         Self {
-            channels: ChannelsPatch::diff(old.channels, new.channels),
+            channels: ChannelsPatch::diff(
+                old.channels,
+                new.channels,
+                clear_paths,
+            ),
         }
     }
 
@@ -555,12 +631,17 @@ struct ChannelsPatch<'a> {
 }
 
 impl<'a> ChannelsPatch<'a> {
-    fn diff(mut old: Channels<'a>, new: Channels<'a>) -> Self {
+    fn diff(
+        mut old: Channels<'a>,
+        new: Channels<'a>,
+        clear_paths: &[ClearPath<'_>],
+    ) -> Self {
         let mut changed = BTreeMap::new();
         let mut added = Vec::new();
         for (key, new_value) in (new.0).0.into_iter() {
             if let Some(old_value) = (old.0).0.remove(&key) {
-                let patch = ChannelPatch::diff(old_value, new_value);
+                let patch =
+                    ChannelPatch::diff(old_value, new_value, clear_paths);
                 if !patch.is_empty() {
                     changed.insert(key, patch);
                 }
@@ -587,7 +668,11 @@ struct ChannelPatch<'a> {
 }
 
 impl<'a> ChannelPatch<'a> {
-    fn diff(old: Channel<'a>, new: Channel<'a>) -> Self {
+    fn diff(
+        old: Channel<'a>,
+        new: Channel<'a>,
+        clear_paths: &[ClearPath<'_>],
+    ) -> Self {
         let path = DiffPath {
             channel: None,
             props: im::Vector::new(),
@@ -601,6 +686,7 @@ impl<'a> ChannelPatch<'a> {
                 new.props,
                 &path,
                 properties_ctx,
+                clear_paths,
             ),
         }
     }
@@ -625,58 +711,55 @@ enum PropertiesCtx<'a> {
     Value(Value<'a>, Value<'a>),
 }
 
+impl<'a> ClearPath<'a> {
+    fn get_remove_keys_filter(
+        &'a self,
+        path: &DiffPath<'_>,
+        ctx: &PropertiesCtx<'_>,
+    ) -> Option<Box<dyn Fn(&Cow<'_, str>) -> bool + 'a>> {
+        let ((_, channel), prop) = path.channel.as_ref()?;
+        if channel.name != self.channel {
+            return None;
+        }
+        if path.props.len() + 1 != self.parts.len() {
+            return None;
+        }
+        if !iter::once(prop)
+            .chain(path.props.iter().map(|(_, prop)| prop))
+            .zip(self.parts.iter())
+            .all(|(prop, part)| {
+                if part.prefix {
+                    prop.starts_with(&*part.prop)
+                } else {
+                    prop == &part.prop
+                }
+            })
+        {
+            return None;
+        }
+        if self.props.value_changed {
+            if let PropertiesCtx::Value(old_ctx, new_ctx) = ctx {
+                if old_ctx.value != new_ctx.value {
+                    return None;
+                }
+            }
+        }
+        if let Some(prefix) = &self.props.prefix {
+            Some(Box::new(move |key| key.starts_with(prefix.as_ref())))
+        } else {
+            Some(Box::new(move |_key| true))
+        }
+    }
+}
+
 impl<'a> PropertiesPatch<'a> {
     fn diff(
         mut old: Properties<'a>,
         new: Properties<'a>,
         path: &DiffPath<'a>,
         ctx: PropertiesCtx<'a>,
+        clear_paths: &[ClearPath<'_>],
     ) -> Self {
-        let remove_old = (|| -> Option<fn(&Cow<'_, str>) -> bool> {
-            use if_chain::if_chain;
-            // remove old panels
-            if_chain! {
-                if let Some(((_, channel), prop)) = path.channel.as_ref();
-                if channel.name == "xfce4-panel";
-                if prop == "panels";
-                let mut path_props = path.props.iter();
-                if path_props.next().is_none();
-                then { return Some(|key| key.starts_with("panel-")); }
-            }
-            // remove old plugins
-            if_chain! {
-                if let Some(((_, channel), prop)) = path.channel.as_ref();
-                if channel.name == "xfce4-panel";
-                if prop == "plugins";
-                let mut path_props = path.props.iter();
-                if path_props.next().is_none();
-                then { return Some(|_key| true); }
-            }
-            // remove old props when plugin type changes
-            if_chain! {
-                if let Some(((_, channel), prop)) = path.channel.as_ref();
-                if channel.name == "xfce4-panel";
-                if prop == "plugins";
-                let mut path_props = path.props.iter();
-                if let Some((_, _)) = path_props.next();
-                if path_props.next().is_none();
-                if let PropertiesCtx::Value(old_ctx, new_ctx) = &ctx;
-                if old_ctx.value != new_ctx.value;
-                then { return Some(|_key| true); }
-            }
-            // remove old keyboard shortcuts
-            if_chain! {
-                if let Some(((_, channel), prop)) = path.channel.as_ref();
-                if channel.name == "xfce4-keyboard-shortcuts";
-                if prop == "xfwm4" || prop == "commands";
-                let mut path_props = path.props.iter();
-                if let Some((_, prop)) = path_props.next();
-                if prop == "custom";
-                if path_props.next().is_none();
-                then { return Some(|_key| true); }
-            }
-            None
-        })();
         let mut changed = BTreeMap::new();
         let mut added = BTreeMap::new();
         for (key, new_value) in new.0.into_iter() {
@@ -692,7 +775,8 @@ impl<'a> PropertiesPatch<'a> {
                         key.clone(),
                     )),
                 };
-                let patch = ValuePatch::diff(old_value, new_value, &path);
+                let patch =
+                    ValuePatch::diff(old_value, new_value, &path, clear_paths);
                 if !patch.is_empty() {
                     changed.insert(key, patch);
                 }
@@ -700,14 +784,17 @@ impl<'a> PropertiesPatch<'a> {
                 added.insert(key, new_value);
             }
         }
-        let removed = if let Some(remove_old) = remove_old {
-            old.0
-                .into_keys()
-                .filter(remove_old)
-                .collect::<BTreeSet<_>>()
-        } else {
-            BTreeSet::new()
-        };
+        let removed = clear_paths
+            .iter()
+            .find_map(|clear_path| {
+                clear_path.get_remove_keys_filter(path, &ctx)
+            })
+            .map_or_else(BTreeSet::new, |remove_keys_filter| {
+                old.0
+                    .into_keys()
+                    .filter(remove_keys_filter)
+                    .collect::<BTreeSet<_>>()
+            });
         Self {
             changed,
             added,
@@ -731,7 +818,12 @@ struct ValuePatch<'a> {
 }
 
 impl<'a> ValuePatch<'a> {
-    fn diff(old: Value<'a>, new: Value<'a>, path: &DiffPath<'a>) -> Self {
+    fn diff(
+        old: Value<'a>,
+        new: Value<'a>,
+        path: &DiffPath<'a>,
+        clear_paths: &[ClearPath<'_>],
+    ) -> Self {
         let properties_ctx = PropertiesCtx::Value(old.clone(), new.clone());
         Self {
             value: TypedValuePatch::diff(old.value, new.value),
@@ -740,6 +832,7 @@ impl<'a> ValuePatch<'a> {
                 new.props,
                 path,
                 properties_ctx,
+                clear_paths,
             ),
         }
     }

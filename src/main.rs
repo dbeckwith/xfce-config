@@ -4,18 +4,21 @@
 use anyhow::{Context, Result};
 use std::fs;
 use structopt::StructOpt;
-use xfce_config::{Applier, DBus, XfceConfig, XfceConfigPatch};
+use xfce_config::{Applier, ClearPath, DBus, XfceConfig, XfceConfigPatch};
 
 #[derive(StructOpt)]
 struct Args {
     #[structopt(long)]
     apply: bool,
+    #[structopt(long = "clear", parse(try_from_str = ClearPath::parse))]
+    clear_paths: Option<Vec<ClearPath<'static>>>,
 }
 
 fn main() -> Result<()> {
     let args = Args::from_args();
 
     let dry_run = !args.apply;
+    let clear_paths = args.clear_paths.unwrap_or_default();
 
     // TODO: unique log subdir for each run?
     let log_dir = dirs2::data_local_dir()
@@ -45,7 +48,7 @@ fn main() -> Result<()> {
     )
     .context("error writing old.json")?;
 
-    let diff = XfceConfigPatch::diff(old_config, new_config);
+    let diff = XfceConfigPatch::diff(old_config, new_config, &clear_paths);
     serde_json::to_writer(
         fs::File::create(log_dir.join("diff.json"))
             .context("error creating diff.json")?,

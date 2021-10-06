@@ -8,6 +8,7 @@ mod serde;
 mod xfconf;
 
 pub use dbus::DBus;
+pub use xfconf::ClearPath;
 
 use ::serde::{Deserialize, Serialize};
 use anyhow::{Context, Result};
@@ -33,9 +34,17 @@ pub struct XfceConfigPatch<'a> {
 }
 
 impl<'a> XfceConfigPatch<'a> {
-    pub fn diff(old: XfceConfig<'a>, new: XfceConfig<'a>) -> Self {
+    pub fn diff(
+        old: XfceConfig<'a>,
+        new: XfceConfig<'a>,
+        clear_paths: &[ClearPath<'_>],
+    ) -> Self {
         XfceConfigPatch {
-            xfconf: xfconf::XfconfPatch::diff(old.xfconf, new.xfconf),
+            xfconf: xfconf::XfconfPatch::diff(
+                old.xfconf,
+                new.xfconf,
+                clear_paths,
+            ),
             panel: panel::PanelPatch::diff(old.panel, new.panel),
         }
     }
