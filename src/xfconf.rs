@@ -739,7 +739,7 @@ impl<'a> ClearPath<'a> {
         }
         if self.props.value_changed {
             if let PropertiesCtx::Value(old_ctx, new_ctx) = ctx {
-                if old_ctx.value != new_ctx.value {
+                if old_ctx.value == new_ctx.value {
                     return None;
                 }
             }
