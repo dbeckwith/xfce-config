@@ -4,7 +4,7 @@
 use anyhow::{Context, Result};
 use std::fs;
 use structopt::StructOpt;
-use xfce_config::{Applier, ClearPath, DBus, XfceConfig, XfceConfigPatch};
+use xfce_config::{Applier, ClearPath, XfceConfig, XfceConfigPatch};
 
 #[derive(StructOpt)]
 struct Args {
@@ -56,18 +56,11 @@ fn main() -> Result<()> {
     )
     .context("error writing diff.json")?;
 
-    let diff_empty = diff.is_empty();
-
     diff.apply(
         &mut Applier::new(dry_run, &log_dir, xfce4_config_dir)
             .context("error creating applier")?,
     )
     .context("error applying config")?;
-
-    if !dry_run && !diff_empty {
-        DBus::new("org.xfce.Panel", "/org/xfce/Panel")?
-            .call("Terminate", (true,))?;
-    }
 
     Ok(())
 }

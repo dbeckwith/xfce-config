@@ -7,11 +7,11 @@ mod panel;
 mod serde;
 mod xfconf;
 
-pub use dbus::DBus;
 pub use xfconf::ClearPath;
 
 use ::serde::{Deserialize, Serialize};
 use anyhow::{Context, Result};
+use dbus::DBus;
 use std::{
     fs,
     io::{Read, Write},
@@ -99,6 +99,9 @@ impl Applier {
 
 impl XfceConfigPatch<'_> {
     pub fn apply(self, applier: &mut Applier) -> Result<()> {
+        let panel_config_changed =
+            !self.panel.is_empty() || self.xfconf.has_panel_changes();
+
         self.xfconf
             .apply(
                 &mut xfconf::Applier::new(
@@ -115,6 +118,14 @@ impl XfceConfigPatch<'_> {
                 applier.xfce4_config_dir.join("panel"),
             ))
             .context("error applying panel")?;
+
+        // restart panel if its config changed
+        if panel_config_changed && !applier.dry_run {
+            DBus::new("org.xfce.Panel", "/org/xfce/Panel")?
+                .call("Terminate", (true,))
+                .context("error restarting panel")?;
+        }
+
         Ok(())
     }
 }

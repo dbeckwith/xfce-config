@@ -620,6 +620,15 @@ impl<'a> XfconfPatch<'a> {
     pub fn is_empty(&self) -> bool {
         self.channels.is_empty()
     }
+
+    pub fn has_panel_changes(&self) -> bool {
+        self.channels.changed.contains_key("xfce4-panel")
+            || self
+                .channels
+                .added
+                .iter()
+                .any(|channel| channel.name == "xfce4-panel")
+    }
 }
 
 #[derive(Debug, Serialize)]
