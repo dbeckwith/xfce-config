@@ -852,6 +852,7 @@ impl<'a> ValuePatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(tag = "type", content = "value", rename_all = "kebab-case")]
 enum TypedValuePatch<'a> {
     Bool(SimplePatch<bool>),
     Int(SimplePatch<i32>),
