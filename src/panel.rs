@@ -15,14 +15,27 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Panel<'a> {
+    #[serde(default, skip_serializing_if = "PluginConfigs::is_empty")]
     plugin_configs: PluginConfigs<'a>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+impl Panel<'_> {
+    pub fn is_empty(&self) -> bool {
+        self.plugin_configs.is_empty()
+    }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
 struct PluginConfigs<'a>(IdMap<PluginConfig<'a>>);
+
+impl PluginConfigs<'_> {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

@@ -10,15 +10,28 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Gtk<'a> {
+    #[serde(default, skip_serializing_if = "Settings::is_empty")]
     settings: Settings<'a>,
+}
+
+impl Gtk<'_> {
+    pub fn is_empty(&self) -> bool {
+        self.settings.is_empty()
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct Settings<'a>(Option<Cfg<'a>>);
+
+impl Settings<'_> {
+    fn is_empty(&self) -> bool {
+        self.0.is_none()
+    }
+}
 
 impl Gtk<'static> {
     pub fn read(dir: &Path) -> Result<Self> {

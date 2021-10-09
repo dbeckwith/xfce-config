@@ -19,13 +19,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-// TODO: make all config parts optional in deserialize
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct XfceConfig<'a> {
+    #[serde(default, skip_serializing_if = "xfconf::Xfconf::is_empty")]
     xfconf: xfconf::Xfconf<'a>,
+    #[serde(default, skip_serializing_if = "panel::Panel::is_empty")]
     panel: panel::Panel<'a>,
+    #[serde(default, skip_serializing_if = "gtk::Gtk::is_empty")]
     gtk: gtk::Gtk<'a>,
 }
 

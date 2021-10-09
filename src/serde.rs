@@ -12,6 +12,24 @@ pub struct IdMap<T>(pub BTreeMap<T::Id, T>)
 where
     T: Id;
 
+impl<T> Default for IdMap<T>
+where
+    T: Id,
+{
+    fn default() -> Self {
+        Self(BTreeMap::new())
+    }
+}
+
+impl<T> IdMap<T>
+where
+    T: Id,
+{
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 impl<T> ser::Serialize for IdMap<T>
 where
     T: ser::Serialize + Id,

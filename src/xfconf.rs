@@ -16,21 +16,34 @@ use std::{
     path::Path,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Xfconf<'a> {
+    #[serde(default, skip_serializing_if = "Channels::is_empty")]
     channels: Channels<'a>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+impl Xfconf<'_> {
+    pub fn is_empty(&self) -> bool {
+        self.channels.is_empty()
+    }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
 struct Channels<'a>(IdMap<Channel<'a>>);
+
+impl Channels<'_> {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct Channel<'a> {
     name: Cow<'a, str>,
     version: Cow<'a, str>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Properties::is_empty")]
     props: Properties<'a>,
 }
 
