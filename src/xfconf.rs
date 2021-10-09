@@ -37,12 +37,18 @@ struct Channel<'a> {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 struct Properties<'a>(BTreeMap<Cow<'a, str>, Value<'a>>);
 
+impl Properties<'_> {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct Value<'a> {
     #[serde(flatten)]
     value: TypedValue<'a>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Properties::is_empty")]
     props: Properties<'a>,
 }
 
