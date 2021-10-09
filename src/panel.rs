@@ -25,6 +25,7 @@ pub struct Panel<'a> {
 struct PluginConfigs<'a>(IdMap<PluginConfig<'a>>);
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 struct PluginConfig<'a> {
     #[serde(rename = "plugin")]
     id: PluginId<'a>,
@@ -60,11 +61,13 @@ enum PluginConfigFile<'a> {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 struct DesktopDir<'a> {
     files: IdMap<DesktopFile<'a>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 struct DesktopFile<'a> {
     id: u64,
     content: DesktopFileContent<'a>,
@@ -78,6 +81,7 @@ enum DesktopFileContent<'a> {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 struct Link<'a> {
     path: Cow<'a, Path>,
 }
@@ -217,9 +221,11 @@ trait Patch {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(bound(
-    serialize = "K: Ord + Serialize, V: Patch + Serialize, V::Data: Serialize"
-))]
+#[serde(
+    bound(serialize = "K: Ord + Serialize, V: Patch + Serialize, V::Data: \
+                       Serialize"),
+    rename_all = "kebab-case"
+)]
 struct MapPatch<K, V>
 where
     K: Ord,
@@ -267,6 +273,7 @@ where
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct PanelPatch<'a> {
     #[serde(skip_serializing_if = "PluginConfigsPatch::is_empty")]
     plugin_configs: PluginConfigsPatch<'a>,
@@ -349,6 +356,7 @@ impl<'a> Patch for PluginConfigPatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 struct RcPatch<'a> {
     id: PluginId<'a>,
     cfg: CfgPatch<'a>,
@@ -370,6 +378,7 @@ impl<'a> Patch for RcPatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 struct DesktopDirPatch<'a> {
     id: PluginId<'a>,
     files: MapPatch<u64, DesktopFilePatch<'a>>,
@@ -391,6 +400,7 @@ impl<'a> Patch for DesktopDirPatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
 enum DesktopFilePatch<'a> {
     Cfg(DesktopFileCfgPatch<'a>),
     Link(LinkPatch<'a>),
@@ -444,6 +454,7 @@ impl<'a> Patch for DesktopFilePatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 struct DesktopFileCfgPatch<'a> {
     id: u64,
     cfg: CfgPatch<'a>,
@@ -465,6 +476,7 @@ impl<'a> Patch for DesktopFileCfgPatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 struct LinkPatch<'a> {
     id: u64,
     path: Option<Cow<'a, Path>>,

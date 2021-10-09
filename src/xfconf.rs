@@ -17,6 +17,7 @@ use std::{
 };
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Xfconf<'a> {
     channels: Channels<'a>,
 }
@@ -25,6 +26,7 @@ pub struct Xfconf<'a> {
 struct Channels<'a>(IdMap<Channel<'a>>);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 struct Channel<'a> {
     name: Cow<'a, str>,
     version: Cow<'a, str>,
@@ -36,6 +38,7 @@ struct Channel<'a> {
 struct Properties<'a>(BTreeMap<Cow<'a, str>, Value<'a>>);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 struct Value<'a> {
     #[serde(flatten)]
     value: TypedValue<'a>,
@@ -597,6 +600,7 @@ impl ClearPath<'static> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct XfconfPatch<'a> {
     #[serde(skip_serializing_if = "ChannelsPatch::is_empty")]
     channels: ChannelsPatch<'a>,
@@ -632,6 +636,7 @@ impl<'a> XfconfPatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 struct ChannelsPatch<'a> {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     changed: BTreeMap<Cow<'a, str>, ChannelPatch<'a>>,
@@ -667,6 +672,7 @@ impl<'a> ChannelsPatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 struct ChannelPatch<'a> {
     #[serde(skip_serializing_if = "SimplePatch::is_empty")]
     name: SimplePatch<Cow<'a, str>>,
@@ -706,6 +712,7 @@ impl<'a> ChannelPatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 struct PropertiesPatch<'a> {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     changed: BTreeMap<Cow<'a, str>, ValuePatch<'a>>,
@@ -819,6 +826,7 @@ impl<'a> PropertiesPatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 struct ValuePatch<'a> {
     #[serde(skip_serializing_if = "TypedValuePatch::is_empty")]
     value: TypedValuePatch<'a>,
@@ -907,6 +915,7 @@ impl<'a> TypedValuePatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 struct SimplePatch<T> {
     value: Option<T>,
 }

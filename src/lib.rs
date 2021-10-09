@@ -26,6 +26,7 @@ pub struct XfceConfig<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct XfceConfigPatch<'a> {
     #[serde(skip_serializing_if = "xfconf::XfconfPatch::is_empty")]
     xfconf: xfconf::XfconfPatch<'a>,
