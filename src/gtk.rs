@@ -53,7 +53,7 @@ pub struct GtkPatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "type", content = "value", rename_all = "kebab-case")]
+#[serde(tag = "type", rename_all = "kebab-case")]
 enum SettingsPatch<'a> {
     Added(Cfg<'a>),
     Changed(CfgPatch<'a>),
