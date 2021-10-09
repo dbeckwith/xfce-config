@@ -645,8 +645,6 @@ impl<'a> Applier<'a> {
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum PatchEvent<'a> {
     #[serde(rename_all = "kebab-case")]
-    Cfg { content: &'a Cfg<'a> },
-    #[serde(rename_all = "kebab-case")]
     RemovePluginRcFile { path: &'a Path },
     #[serde(rename_all = "kebab-case")]
     RemovePluginDesktopDir { path: &'a Path },

@@ -211,9 +211,7 @@ impl<'a> Applier<'a> {
 
     fn write_cfg(&mut self, cfg: &Cfg<'_>) -> Result<()> {
         self.patch_recorder
-            .log(&crate::PatchEvent::Panel(crate::panel::PatchEvent::Cfg {
-                content: cfg,
-            }))
+            .log(&crate::PatchEvent::Cfg { content: cfg })
             .context("error logging CFG write")?;
         if !self.dry_run {
             fs::remove_file(&self.path)

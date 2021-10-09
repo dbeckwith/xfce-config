@@ -26,9 +26,9 @@ fn main() -> Result<()> {
         .join("xfce-config");
     fs::create_dir_all(&log_dir).context("error creating log dir")?;
 
-    let xfce4_config_dir = dirs2::config_dir()
-        .context("could not get config dir")?
-        .join("xfce4");
+    let config_dir = dirs2::config_dir().context("could not get config dir")?;
+    let xfce4_config_dir = config_dir.join("xfce4");
+    let gtk_config_dir = config_dir.join("gtk-3.0");
 
     let new_config = XfceConfig::from_json_reader(std::io::stdin())
         .context("error reading input JSON")?;
@@ -39,7 +39,7 @@ fn main() -> Result<()> {
     )
     .context("error writing new.json")?;
 
-    let old_config = XfceConfig::from_env(&xfce4_config_dir)
+    let old_config = XfceConfig::from_env(&xfce4_config_dir, &gtk_config_dir)
         .context("error reading config from environment")?;
     serde_json::to_writer(
         fs::File::create(log_dir.join("old.json"))
@@ -57,7 +57,7 @@ fn main() -> Result<()> {
     .context("error writing diff.json")?;
 
     diff.apply(
-        &mut Applier::new(dry_run, &log_dir, xfce4_config_dir)
+        &mut Applier::new(dry_run, &log_dir, xfce4_config_dir, gtk_config_dir)
             .context("error creating applier")?,
     )
     .context("error applying config")?;
