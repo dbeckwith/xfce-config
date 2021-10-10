@@ -1032,7 +1032,9 @@ impl<'a> Applier<'a> {
         value: glib::Variant,
     ) -> Result<()> {
         let (channel, property) = Self::path_to_channel_property(path);
-        self.call("SetProperty", &(channel, property, value))
+        let recursive = true;
+        self.call("ResetProperty", &(channel, property.as_str(), recursive))?;
+        self.call("SetProperty", &(channel, property.as_str(), value))
     }
 
     fn set_bool(&mut self, path: &ApplyPath<'_>, b: bool) -> Result<()> {
@@ -1100,7 +1102,7 @@ impl<'a> Applier<'a> {
     fn remove(&mut self, path: &ApplyPath<'_>) -> Result<()> {
         let (channel, property) = Self::path_to_channel_property(path);
         let recursive = true;
-        self.call("ResetProperty", &(channel, property, recursive))
+        self.call("ResetProperty", &(channel, property.as_str(), recursive))
     }
 }
 
