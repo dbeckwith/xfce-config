@@ -89,7 +89,12 @@ impl<'a> SettingsPatch<'a> {
     fn diff(old: Settings<'a>, new: Settings<'a>) -> Self {
         match (old.0, new.0) {
             (Some(old_content), Some(new_content)) => {
-                Self::Changed(CfgPatch::diff(old_content, new_content))
+                let diff = CfgPatch::diff(old_content, new_content);
+                if diff.is_empty() {
+                    Self::Unchanged
+                } else {
+                    Self::Changed(diff)
+                }
             },
             (None, Some(new_content)) => Self::Added(new_content),
             (_, None) => Self::Unchanged,
