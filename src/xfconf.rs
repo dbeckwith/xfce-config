@@ -1033,8 +1033,17 @@ impl<'a> Applier<'a> {
     ) -> Result<()> {
         let (channel, property) = Self::path_to_channel_property(path);
         let recursive = true;
-        self.call("ResetProperty", &(channel, property.as_str(), recursive))?;
-        self.call("SetProperty", &(channel, property.as_str(), value))
+        if self
+            .dbus
+            .call("PropertyExists", (channel, property.as_str()))
+            .context("error checking if property exists")?
+            .try_get()
+            .context("error checking PropertyExists return")?
+        {
+            self.call("ResetProperty", (channel, property.as_str(), recursive))
+                .context("error resetting property before set")?;
+        }
+        self.call("SetProperty", (channel, property.as_str(), value))
     }
 
     fn set_bool(&mut self, path: &ApplyPath<'_>, b: bool) -> Result<()> {
@@ -1102,7 +1111,7 @@ impl<'a> Applier<'a> {
     fn remove(&mut self, path: &ApplyPath<'_>) -> Result<()> {
         let (channel, property) = Self::path_to_channel_property(path);
         let recursive = true;
-        self.call("ResetProperty", &(channel, property.as_str(), recursive))
+        self.call("ResetProperty", (channel, property.as_str(), recursive))
     }
 }
 

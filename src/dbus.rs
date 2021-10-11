@@ -25,7 +25,7 @@ impl DBus {
         &mut self,
         method: &'static str,
         args: impl glib::variant::ToVariant,
-    ) -> Result<()> {
+    ) -> Result<glib::Variant> {
         let args = args.to_variant();
         gio::prelude::DBusProxyExt::call_sync::<gio::Cancellable>(
             &self.proxy,
@@ -35,7 +35,6 @@ impl DBus {
             -1,
             None,
         )
-        .with_context(|| format!("{}{}", method, args.to_string()))?;
-        Ok(())
+        .with_context(|| format!("{}{}", method, args.to_string()))
     }
 }
