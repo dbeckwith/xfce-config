@@ -1037,8 +1037,9 @@ impl<'a> Applier<'a> {
             .dbus
             .call("PropertyExists", (channel, property.as_str()))
             .context("error checking if property exists")?
-            .try_get()
+            .try_get::<(bool,)>()
             .context("error checking PropertyExists return")?
+            .0
         {
             self.call("ResetProperty", (channel, property.as_str(), recursive))
                 .context("error resetting property before set")?;
