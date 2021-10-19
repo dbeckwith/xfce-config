@@ -6,7 +6,7 @@ members = [
 
 [package]
 name = "xfce-config"
-version = "0.3.8"
+version = "0.3.9"
 authors = ["Daniel Beckwith <djbsnx@gmail.com>"]
 edition = "2018"
 
