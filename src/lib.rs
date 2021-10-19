@@ -75,8 +75,8 @@ impl XfceConfig<'static> {
         xfce4_config_dir: &Path,
         gtk_config_dir: &Path,
     ) -> Result<Self> {
-        let xfconf = xfconf::Xfconf::read(&xfce4_config_dir.join("xfconf"))
-            .context("error loading xfconf data")?;
+        let xfconf =
+            xfconf::Xfconf::load().context("error loading xfconf data")?;
         let panel = panel::Panel::read(&xfce4_config_dir.join("panel"))
             .context("error loading panel data")?;
         let gtk =

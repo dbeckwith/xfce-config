@@ -18,7 +18,6 @@ dirs2 = "3.0.1"
 gio = "0.14.6"
 glib = "0.14.5"
 im = "15.0.0"
-quick-xml = "0.22.0"
 serde = { version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.67"
 structopt = "0.3.23"
