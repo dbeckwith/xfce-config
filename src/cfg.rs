@@ -214,20 +214,18 @@ impl<'a> Applier<'a> {
             .log(&crate::PatchEvent::Cfg { content: cfg })
             .context("error logging CFG write")?;
         if !self.dry_run {
-            fs::remove_file(&self.path)
-                .or_else(|error| {
-                    if error.kind() == io::ErrorKind::NotFound {
-                        Ok(())
-                    } else {
-                        Err(error)
-                    }
-                })
-                .context("error removing existing CFG file")?;
+            let tmp = std::env::temp_dir().join(
+                self.path
+                    .file_name()
+                    .context("CFG file path has no file name")?,
+            );
             cfg.write(
-                fs::File::create(&self.path)
-                    .context("error creating CFG file")?,
+                fs::File::create(&tmp)
+                    .context("error creating temporary CFG file")?,
             )
-            .context("error writing CFG file")?;
+            .context("error writing temporary CFG file")?;
+            fs::rename(tmp, &self.path)
+                .context("error moving temporary CFG file")?;
         }
         Ok(())
     }
