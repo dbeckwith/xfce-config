@@ -33,7 +33,6 @@ impl Channels<'_> {
 #[serde(rename_all = "kebab-case")]
 struct Channel<'a> {
     name: Cow<'a, str>,
-    version: Cow<'a, str>,
     #[serde(default, skip_serializing_if = "Properties::is_empty")]
     props: Properties<'a>,
 }
@@ -220,8 +219,6 @@ impl Channels<'_> {
                 }
                 let channel = Channel {
                     name: name.clone(),
-                    // TODO: remove channel version entirely?
-                    version: Cow::Borrowed("1.0"),
                     props,
                 };
                 Ok((name, channel))
@@ -365,8 +362,6 @@ impl<'a> ChannelsPatch<'a> {
 struct ChannelPatch<'a> {
     #[serde(skip_serializing_if = "SimplePatch::is_empty")]
     name: SimplePatch<Cow<'a, str>>,
-    #[serde(skip_serializing_if = "SimplePatch::is_empty")]
-    version: SimplePatch<Cow<'a, str>>,
     #[serde(skip_serializing_if = "PropertiesPatch::is_empty")]
     props: PropertiesPatch<'a>,
 }
@@ -384,7 +379,6 @@ impl<'a> ChannelPatch<'a> {
         let properties_ctx = PropertiesCtx::Channel(old.clone(), new.clone());
         Self {
             name: SimplePatch::diff(old.name, new.name),
-            version: SimplePatch::diff(old.version, new.version),
             props: PropertiesPatch::diff(
                 old.props,
                 new.props,
@@ -396,7 +390,7 @@ impl<'a> ChannelPatch<'a> {
     }
 
     fn is_empty(&self) -> bool {
-        self.name.is_empty() && self.version.is_empty() && self.props.is_empty()
+        self.name.is_empty() && self.props.is_empty()
     }
 }
 
@@ -1026,7 +1020,6 @@ mod tests {
             channel,
             Channel {
                 name: "channel".into(),
-                version: "1.0".into(),
                 props: Properties(btreemap! {
                     "foo".into() => Value {
                         value: TypedValue::String("bar".into()),
