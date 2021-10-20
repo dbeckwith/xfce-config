@@ -1,5 +1,6 @@
 use crate::{
     cfg::{Applier as CfgApplier, Cfg, CfgPatch},
+    json::{Applier as JsonApplier, Json, JsonPatch},
     open_file,
     serde::IdMap,
     PatchRecorder,
@@ -43,6 +44,7 @@ struct Config {
     id: ConfigId,
     #[serde(flatten)]
     content: ConfigContent,
+    // TODO: support clear paths
 }
 
 impl crate::serde::Id for Config {
@@ -84,7 +86,7 @@ enum ConfigRoot {
 #[serde(tag = "type", content = "content", rename_all = "kebab-case")]
 enum ConfigContent {
     Cfg(Cfg),
-    // TODO: json
+    Json(Json),
 }
 
 impl General {
@@ -118,20 +120,19 @@ impl Configs {
 
 impl ConfigContent {
     fn read(path: PathBuf, kind: &Self) -> Result<Option<Self>> {
+        let file = match open_file(path).context("error opening config file")? {
+            Some(file) => file,
+            None => return Ok(None),
+        };
         match kind {
-            ConfigContent::Cfg(_) => {
-                let file = match open_file(path)
-                    .context("error opening general config CFG file")?
-                {
-                    Some(file) => file,
-                    None => return Ok(None),
-                };
-                let reader = io::BufReader::new(file);
-                let cfg = Cfg::read(reader)
-                    .context("error reading general config CFG file")?;
-                Ok(Some(ConfigContent::Cfg(cfg)))
-            },
+            ConfigContent::Cfg(_) => Cfg::read(io::BufReader::new(file))
+                .context("error reading CFG file")
+                .map(ConfigContent::Cfg),
+            ConfigContent::Json(_) => serde_json::from_reader(file)
+                .context("error reading JSON file")
+                .map(ConfigContent::Json),
         }
+        .map(Some)
     }
 }
 
@@ -209,6 +210,7 @@ impl ConfigPatch {
 #[serde(rename_all = "kebab-case")]
 enum ConfigContentPatch {
     Cfg(CfgPatch),
+    Json(JsonPatch),
 }
 
 impl ConfigContentPatch {
@@ -217,17 +219,23 @@ impl ConfigContentPatch {
             (ConfigContent::Cfg(old), ConfigContent::Cfg(new)) => {
                 Self::Cfg(CfgPatch::diff(old, new))
             },
-            // TODO: if content type changes, return error
+            (ConfigContent::Json(old), ConfigContent::Json(new)) => {
+                Self::Json(JsonPatch::diff(old, new))
+            },
+            _ => {
+                // TODO: return error
+                panic!("config file type changed")
+            },
         }
     }
 
     fn is_empty(&self) -> bool {
         match self {
             ConfigContentPatch::Cfg(cfg_patch) => cfg_patch.is_empty(),
+            ConfigContentPatch::Json(json_patch) => json_patch.is_empty(),
         }
     }
 }
-
 pub struct Applier<'a> {
     dry_run: bool,
     patch_recorder: &'a mut PatchRecorder,
@@ -249,6 +257,14 @@ impl<'a> Applier<'a> {
 
     fn cfg_applier(&mut self, id: &ConfigId) -> CfgApplier<'_> {
         CfgApplier::new(
+            self.dry_run,
+            self.patch_recorder,
+            id.full_path(&self.config_dir).into(),
+        )
+    }
+
+    fn json_applier(&mut self, id: &ConfigId) -> JsonApplier<'_> {
+        JsonApplier::new(
             self.dry_run,
             self.patch_recorder,
             id.full_path(&self.config_dir).into(),
@@ -281,6 +297,9 @@ impl Config {
             ConfigContent::Cfg(cfg) => {
                 cfg.apply(&mut applier.cfg_applier(&self.id))
             },
+            ConfigContent::Json(json) => {
+                json.apply(&mut applier.json_applier(&self.id))
+            },
         }
     }
 }
@@ -290,6 +309,9 @@ impl ConfigPatch {
         match self.content {
             ConfigContentPatch::Cfg(cfg_patch) => {
                 cfg_patch.apply(&mut applier.cfg_applier(&self.id))
+            },
+            ConfigContentPatch::Json(json_patch) => {
+                json_patch.apply(&mut applier.json_applier(&self.id))
             },
         }
     }

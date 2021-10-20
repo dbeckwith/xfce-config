@@ -5,6 +5,7 @@ mod cfg;
 mod dbus;
 mod general;
 mod gtk;
+mod json;
 mod panel;
 mod serde;
 mod xfconf;
@@ -192,6 +193,10 @@ enum PatchEvent<'a> {
     #[serde(rename_all = "kebab-case")]
     Cfg {
         content: &'a cfg::Cfg,
+    },
+    #[serde(rename_all = "kebab-case")]
+    Json {
+        content: &'a json::Json,
     },
 }
 
