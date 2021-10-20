@@ -109,10 +109,9 @@ impl Configs {
                         Err(error) => return Some(Err(error)),
                     };
                 let id = new_config.id.clone();
-                Some(Ok((id.clone(), Config { id, content })))
+                Some(Ok(Config { id, content }))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .map(IdMap)
+            .collect::<Result<IdMap<_>>>()
             .map(Self)
     }
 }

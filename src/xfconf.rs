@@ -209,14 +209,9 @@ impl Channels {
                         },
                     }
                 }
-                let channel = Channel {
-                    name: name.clone(),
-                    props,
-                };
-                Ok((name, channel))
+                Ok(Channel { name, props })
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .map(IdMap)
+            .collect::<Result<IdMap<_>>>()
             .map(Self)
     }
 }

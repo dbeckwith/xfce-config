@@ -118,13 +118,7 @@ impl PluginConfigs {
                 PluginConfig::read(&path)
             })
             .filter_map(Result::transpose)
-            .map(|plugin_config| {
-                plugin_config.map(|plugin_config| {
-                    (plugin_config.id.clone(), plugin_config)
-                })
-            })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .map(IdMap)
+            .collect::<Result<IdMap<_>>>()
             .map(Self)
     }
 }
