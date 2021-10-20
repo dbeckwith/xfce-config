@@ -512,6 +512,7 @@ impl Patch for LinkPatch {
 pub struct Applier<'a> {
     dry_run: bool,
     patch_recorder: &'a mut PatchRecorder,
+    // TODO: make paths in appliers borrowed
     dir: PathBuf,
 }
 

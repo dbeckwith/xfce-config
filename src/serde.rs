@@ -7,6 +7,8 @@ pub trait Id {
     fn id(&self) -> &Self::Id;
 }
 
+// TODO: impl FromIterator for IdMap
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdMap<T>(pub BTreeMap<T::Id, T>)
 where

@@ -36,8 +36,13 @@ fn main() -> Result<()> {
     )
     .context("error writing new.json")?;
 
-    let old_config = XfceConfig::from_env(&xfce4_config_dir, &gtk_config_dir)
-        .context("error reading config from environment")?;
+    let old_config = XfceConfig::from_env(
+        &new_config,
+        &config_dir,
+        &xfce4_config_dir,
+        &gtk_config_dir,
+    )
+    .context("error reading config from environment")?;
     serde_json::to_writer(
         fs::File::create(log_dir.join("old.json"))
             .context("error creating old.json")?,
@@ -54,8 +59,14 @@ fn main() -> Result<()> {
     .context("error writing diff.json")?;
 
     diff.apply(
-        &mut Applier::new(dry_run, &log_dir, xfce4_config_dir, gtk_config_dir)
-            .context("error creating applier")?,
+        &mut Applier::new(
+            dry_run,
+            &log_dir,
+            xfce4_config_dir,
+            gtk_config_dir,
+            config_dir,
+        )
+        .context("error creating applier")?,
     )
     .context("error applying config")?;
 

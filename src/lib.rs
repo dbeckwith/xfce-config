@@ -3,6 +3,7 @@
 
 mod cfg;
 mod dbus;
+mod general;
 mod gtk;
 mod panel;
 mod serde;
@@ -26,6 +27,8 @@ pub struct XfceConfig {
     panel: panel::Panel,
     #[serde(default, skip_serializing_if = "gtk::Gtk::is_empty")]
     gtk: gtk::Gtk,
+    #[serde(default, skip_serializing_if = "general::General::is_empty")]
+    general: general::General,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,6 +40,8 @@ pub struct XfceConfigPatch {
     panel: panel::PanelPatch,
     #[serde(skip_serializing_if = "gtk::GtkPatch::is_empty")]
     gtk: gtk::GtkPatch,
+    #[serde(skip_serializing_if = "general::GeneralPatch::is_empty")]
+    general: general::GeneralPatch,
 }
 
 impl XfceConfigPatch {
@@ -45,6 +50,7 @@ impl XfceConfigPatch {
             xfconf: xfconf::XfconfPatch::diff(old.xfconf, new.xfconf),
             panel: panel::PanelPatch::diff(old.panel, new.panel),
             gtk: gtk::GtkPatch::diff(old.gtk, new.gtk),
+            general: general::GeneralPatch::diff(old.general, new.general),
         }
     }
 
@@ -62,16 +68,26 @@ impl XfceConfig {
     }
 
     pub fn from_env(
+        new_config: &Self,
+        config_dir: &Path,
         xfce4_config_dir: &Path,
         gtk_config_dir: &Path,
     ) -> Result<Self> {
+        // TODO: consider new_config.xfconf to only load used channels
         let xfconf =
             xfconf::Xfconf::load().context("error loading xfconf data")?;
         let panel = panel::Panel::read(&xfce4_config_dir.join("panel"))
             .context("error loading panel data")?;
         let gtk =
             gtk::Gtk::read(gtk_config_dir).context("error loading gtk data")?;
-        Ok(Self { xfconf, panel, gtk })
+        let general = general::General::read(&new_config.general, config_dir)
+            .context("error loading general data")?;
+        Ok(Self {
+            xfconf,
+            panel,
+            gtk,
+            general,
+        })
     }
 }
 
@@ -80,6 +96,7 @@ pub struct Applier {
     patch_recorder: PatchRecorder,
     xfce4_config_dir: PathBuf,
     gtk_config_dir: PathBuf,
+    config_dir: PathBuf,
 }
 
 struct PatchRecorder {
@@ -92,6 +109,7 @@ impl Applier {
         log_dir: &Path,
         xfce4_config_dir: PathBuf,
         gtk_config_dir: PathBuf,
+        config_dir: PathBuf,
     ) -> Result<Self> {
         let patch_recorder = PatchRecorder::new(&log_dir.join("patches.json"))
             .context("error creating patch recorder")?;
@@ -100,6 +118,7 @@ impl Applier {
             patch_recorder,
             xfce4_config_dir,
             gtk_config_dir,
+            config_dir,
         })
     }
 }
@@ -132,6 +151,13 @@ impl XfceConfigPatch {
                 applier.gtk_config_dir.clone(),
             ))
             .context("error applying gtk")?;
+        self.general
+            .apply(&mut general::Applier::new(
+                applier.dry_run,
+                &mut applier.patch_recorder,
+                applier.config_dir.clone(),
+            ))
+            .context("error applying general")?;
 
         // restart panel if its config changed
         if panel_config_changed && !applier.dry_run {
