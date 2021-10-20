@@ -7,6 +7,7 @@ use anyhow::{bail, Context, Result};
 use cfg_if::cfg_if;
 use serde::{ser, Deserialize, Serialize};
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     fmt,
     fs,
@@ -512,15 +513,14 @@ impl Patch for LinkPatch {
 pub struct Applier<'a> {
     dry_run: bool,
     patch_recorder: &'a mut PatchRecorder,
-    // TODO: make paths in appliers borrowed
-    dir: PathBuf,
+    dir: Cow<'a, Path>,
 }
 
 impl<'a> Applier<'a> {
     pub(crate) fn new(
         dry_run: bool,
         patch_recorder: &'a mut PatchRecorder,
-        dir: PathBuf,
+        dir: Cow<'a, Path>,
     ) -> Self {
         Self {
             dry_run,
@@ -558,7 +558,7 @@ impl<'a> Applier<'a> {
         CfgApplier::new(
             self.dry_run,
             self.patch_recorder,
-            self.rc_file_path(plugin_id),
+            self.rc_file_path(plugin_id).into(),
         )
     }
 
@@ -570,7 +570,7 @@ impl<'a> Applier<'a> {
         CfgApplier::new(
             self.dry_run,
             self.patch_recorder,
-            self.desktop_file_path(plugin_id, desktop_id),
+            self.desktop_file_path(plugin_id, desktop_id).into(),
         )
     }
 

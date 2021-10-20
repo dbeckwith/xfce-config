@@ -2,10 +2,11 @@ use crate::PatchRecorder;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     fs,
     io::{self, BufRead, Write},
-    path::PathBuf,
+    path::Path,
 };
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -189,14 +190,14 @@ impl Patch for StrPatch {
 pub struct Applier<'a> {
     dry_run: bool,
     patch_recorder: &'a mut PatchRecorder,
-    path: PathBuf,
+    path: Cow<'a, Path>,
 }
 
 impl<'a> Applier<'a> {
     pub(crate) fn new(
         dry_run: bool,
         patch_recorder: &'a mut PatchRecorder,
-        path: PathBuf,
+        path: Cow<'a, Path>,
     ) -> Self {
         Self {
             dry_run,

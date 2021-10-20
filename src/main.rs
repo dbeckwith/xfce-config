@@ -62,9 +62,9 @@ fn main() -> Result<()> {
         &mut Applier::new(
             dry_run,
             &log_dir,
-            xfce4_config_dir,
-            gtk_config_dir,
-            config_dir,
+            xfce4_config_dir.into(),
+            gtk_config_dir.into(),
+            config_dir.into(),
         )
         .context("error creating applier")?,
     )

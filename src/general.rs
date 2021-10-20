@@ -7,6 +7,7 @@ use crate::{
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     io,
     path::{Path, PathBuf},
@@ -231,14 +232,14 @@ impl ConfigContentPatch {
 pub struct Applier<'a> {
     dry_run: bool,
     patch_recorder: &'a mut PatchRecorder,
-    config_dir: PathBuf,
+    config_dir: Cow<'a, Path>,
 }
 
 impl<'a> Applier<'a> {
     pub(crate) fn new(
         dry_run: bool,
         patch_recorder: &'a mut PatchRecorder,
-        config_dir: PathBuf,
+        config_dir: Cow<'a, Path>,
     ) -> Self {
         Self {
             dry_run,
@@ -251,7 +252,7 @@ impl<'a> Applier<'a> {
         CfgApplier::new(
             self.dry_run,
             self.patch_recorder,
-            id.full_path(&self.config_dir),
+            id.full_path(&self.config_dir).into(),
         )
     }
 }

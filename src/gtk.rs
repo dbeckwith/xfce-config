@@ -5,11 +5,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    io,
-    path::{Path, PathBuf},
-};
+use std::{borrow::Cow, fs, io, path::Path};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -110,14 +106,14 @@ impl SettingsPatch {
 pub struct Applier<'a> {
     dry_run: bool,
     patch_recorder: &'a mut PatchRecorder,
-    dir: PathBuf,
+    dir: Cow<'a, Path>,
 }
 
 impl<'a> Applier<'a> {
     pub(crate) fn new(
         dry_run: bool,
         patch_recorder: &'a mut PatchRecorder,
-        dir: PathBuf,
+        dir: Cow<'a, Path>,
     ) -> Self {
         Self {
             dry_run,
@@ -130,7 +126,7 @@ impl<'a> Applier<'a> {
         CfgApplier::new(
             self.dry_run,
             self.patch_recorder,
-            self.dir.join("settings.ini"),
+            self.dir.join("settings.ini").into(),
         )
     }
 

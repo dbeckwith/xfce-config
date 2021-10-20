@@ -13,9 +13,10 @@ use ::serde::{Deserialize, Serialize};
 use anyhow::{Context, Result};
 use dbus::DBus;
 use std::{
+    borrow::Cow,
     fs,
     io::{self, Read, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -91,25 +92,25 @@ impl XfceConfig {
     }
 }
 
-pub struct Applier {
+pub struct Applier<'a> {
     dry_run: bool,
     patch_recorder: PatchRecorder,
-    xfce4_config_dir: PathBuf,
-    gtk_config_dir: PathBuf,
-    config_dir: PathBuf,
+    xfce4_config_dir: Cow<'a, Path>,
+    gtk_config_dir: Cow<'a, Path>,
+    config_dir: Cow<'a, Path>,
 }
 
 struct PatchRecorder {
     file: fs::File,
 }
 
-impl Applier {
+impl<'a> Applier<'a> {
     pub fn new(
         dry_run: bool,
         log_dir: &Path,
-        xfce4_config_dir: PathBuf,
-        gtk_config_dir: PathBuf,
-        config_dir: PathBuf,
+        xfce4_config_dir: Cow<'a, Path>,
+        gtk_config_dir: Cow<'a, Path>,
+        config_dir: Cow<'a, Path>,
     ) -> Result<Self> {
         let patch_recorder = PatchRecorder::new(&log_dir.join("patches.json"))
             .context("error creating patch recorder")?;
@@ -124,7 +125,7 @@ impl Applier {
 }
 
 impl XfceConfigPatch {
-    pub fn apply(self, applier: &mut Applier) -> Result<()> {
+    pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         let panel_config_changed =
             !self.panel.is_empty() || self.xfconf.has_panel_changes();
 
@@ -141,7 +142,7 @@ impl XfceConfigPatch {
             .apply(&mut panel::Applier::new(
                 applier.dry_run,
                 &mut applier.patch_recorder,
-                applier.xfce4_config_dir.join("panel"),
+                applier.xfce4_config_dir.join("panel").into(),
             ))
             .context("error applying panel")?;
         self.gtk
