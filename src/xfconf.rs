@@ -108,52 +108,45 @@ impl Channels {
             .context("ListChannels had empty return value")?;
 
         fn value_from_variant(variant: glib::Variant) -> Result<TypedValue> {
-            // FIXME: don't throw unknown value type on array item errors
-            // TODO: try_get isn't needed since error isn't used
             variant
-                .try_get::<bool>()
+                .get::<bool>()
                 .map(TypedValue::Bool)
-                .or_else(|_| variant.try_get::<i32>().map(TypedValue::Int))
-                .or_else(|_| variant.try_get::<u32>().map(TypedValue::Uint))
-                .or_else(|_| variant.try_get::<f64>().map(TypedValue::Double))
-                .or_else(|_| {
-                    variant.try_get::<String>().map(TypedValue::String)
-                })
-                .or_else(|_| {
-                    variant
-                        .try_get::<Vec<glib::Variant>>()
-                        .map_err(Error::from)
-                        .and_then(|array| {
-                            array
-                                .into_iter()
-                                .map(array_value_from_variant)
-                                .map(|value| {
-                                    value.map(|value| Value {
-                                        value,
-                                        props: Properties::default(),
-                                    })
+                .or_else(|| variant.get::<i32>().map(TypedValue::Int))
+                .or_else(|| variant.get::<u32>().map(TypedValue::Uint))
+                .or_else(|| variant.get::<f64>().map(TypedValue::Double))
+                .or_else(|| variant.get::<String>().map(TypedValue::String))
+                .map(Ok)
+                .or_else(|| {
+                    variant.get::<Vec<glib::Variant>>().map(|array| {
+                        array
+                            .into_iter()
+                            .map(array_value_from_variant)
+                            .map(|value| {
+                                value.map(|value| Value {
+                                    value,
+                                    props: Properties::default(),
                                 })
-                                .collect::<Result<Vec<_>>>()
-                        })
-                        .map(TypedValue::Array)
+                            })
+                            .collect::<Result<Vec<_>>>()
+                            .map(TypedValue::Array)
+                    })
                 })
                 .with_context(|| {
                     format!("unknown value type {}", variant.type_().to_str())
                 })
+                .and_then(std::convert::identity)
         }
 
         fn array_value_from_variant(
             variant: glib::Variant,
         ) -> Result<TypedValue> {
             variant
-                .try_get::<bool>()
+                .get::<bool>()
                 .map(TypedValue::Bool)
-                .or_else(|_| variant.try_get::<i32>().map(TypedValue::Int))
-                .or_else(|_| variant.try_get::<u32>().map(TypedValue::Uint))
-                .or_else(|_| variant.try_get::<f64>().map(TypedValue::Double))
-                .or_else(|_| {
-                    variant.try_get::<String>().map(TypedValue::String)
-                })
+                .or_else(|| variant.get::<i32>().map(TypedValue::Int))
+                .or_else(|| variant.get::<u32>().map(TypedValue::Uint))
+                .or_else(|| variant.get::<f64>().map(TypedValue::Double))
+                .or_else(|| variant.get::<String>().map(TypedValue::String))
                 .with_context(|| {
                     format!(
                         "unknown array value type {}",
