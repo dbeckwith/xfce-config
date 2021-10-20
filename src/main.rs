@@ -4,21 +4,18 @@
 use anyhow::{Context, Result};
 use std::{fs, path::PathBuf};
 use structopt::StructOpt;
-use xfce_config::{Applier, ClearPath, XfceConfig, XfceConfigPatch};
+use xfce_config::{Applier, XfceConfig, XfceConfigPatch};
 
 #[derive(StructOpt)]
 struct Args {
     #[structopt(long)]
     apply: bool,
-    #[structopt(long = "clear", parse(try_from_str = ClearPath::parse))]
-    clear_paths: Option<Vec<ClearPath>>,
 }
 
 fn main() -> Result<()> {
     let args = Args::from_args();
 
     let dry_run = !args.apply;
-    let clear_paths = args.clear_paths.unwrap_or_default();
 
     let log_dir = rotating_log_dir(
         dirs2::data_local_dir()
@@ -48,7 +45,7 @@ fn main() -> Result<()> {
     )
     .context("error writing old.json")?;
 
-    let diff = XfceConfigPatch::diff(old_config, new_config, &clear_paths);
+    let diff = XfceConfigPatch::diff(old_config, new_config);
     serde_json::to_writer(
         fs::File::create(log_dir.join("diff.json"))
             .context("error creating diff.json")?,

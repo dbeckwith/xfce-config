@@ -42,17 +42,9 @@ pub struct XfceConfigPatch {
 }
 
 impl XfceConfigPatch {
-    pub fn diff(
-        old: XfceConfig,
-        new: XfceConfig,
-        clear_paths: &[ClearPath],
-    ) -> Self {
+    pub fn diff(old: XfceConfig, new: XfceConfig) -> Self {
         XfceConfigPatch {
-            xfconf: xfconf::XfconfPatch::diff(
-                old.xfconf,
-                new.xfconf,
-                clear_paths,
-            ),
+            xfconf: xfconf::XfconfPatch::diff(old.xfconf, new.xfconf),
             panel: panel::PanelPatch::diff(old.panel, new.panel),
             gtk: gtk::GtkPatch::diff(old.gtk, new.gtk),
         }

@@ -1,9 +1,11 @@
 use crate::{dbus::DBus, serde::IdMap, PatchRecorder};
 use anyhow::{anyhow, bail, Context, Error, Result};
-use serde::{Deserialize, Serialize};
+use serde::{de, ser, Deserialize, Serialize};
 use std::{
     collections::{btree_map, BTreeMap, BTreeSet},
+    fmt,
     iter,
+    str::FromStr,
 };
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -11,6 +13,8 @@ use std::{
 pub struct Xfconf {
     #[serde(default, skip_serializing_if = "Channels::is_empty")]
     channels: Channels,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    clear_paths: Vec<ClearPath>,
 }
 
 impl Xfconf {
@@ -89,6 +93,8 @@ impl Xfconf {
     pub fn load() -> Result<Self> {
         Ok(Self {
             channels: Channels::load().context("error loading channels")?,
+            // clear paths from env are unused (only ones from input are used)
+            clear_paths: Vec::new(),
         })
     }
 }
@@ -102,6 +108,8 @@ impl Channels {
             .context("ListChannels had empty return value")?;
 
         fn value_from_variant(variant: glib::Variant) -> Result<TypedValue> {
+            // FIXME: don't throw unknown value type on array item errors
+            // TODO: try_get isn't needed since error isn't used
             variant
                 .try_get::<bool>()
                 .map(TypedValue::Bool)
@@ -228,8 +236,10 @@ impl crate::serde::Id for Channel {
     }
 }
 
-impl ClearPath {
-    pub fn parse(input: &str) -> Result<Self> {
+impl FromStr for ClearPath {
+    type Err = Error;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
         let mut input_parts = input.split('.').peekable();
         let channel = input_parts.next().context("missing channel")?;
         let mut parts = Vec::new();
@@ -276,6 +286,66 @@ impl ClearPath {
     }
 }
 
+impl fmt::Display for ClearPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            channel,
+            parts,
+            props,
+        } = self;
+        write!(f, "{}.", channel)?;
+        for ClearPathPart { prop, prefix } in parts {
+            write!(f, "{}{}.", prop, if *prefix { "*" } else { "" })?;
+        }
+        let ClearPathProps {
+            value_changed,
+            prefix,
+        } = props;
+        write!(
+            f,
+            "{}{}*",
+            if *value_changed { "~" } else { "" },
+            prefix.as_deref().unwrap_or("")
+        )?;
+        Ok(())
+    }
+}
+
+impl<'de: 'a, 'a> de::Deserialize<'de> for ClearPath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = ClearPath;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "clear path")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                v.parse().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(Visitor)
+    }
+}
+
+impl ser::Serialize for ClearPath {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct XfconfPatch {
@@ -284,12 +354,12 @@ pub struct XfconfPatch {
 }
 
 impl XfconfPatch {
-    pub fn diff(old: Xfconf, new: Xfconf, clear_paths: &[ClearPath]) -> Self {
+    pub fn diff(old: Xfconf, new: Xfconf) -> Self {
         Self {
             channels: ChannelsPatch::diff(
                 old.channels,
                 new.channels,
-                clear_paths,
+                &new.clear_paths,
             ),
         }
     }
