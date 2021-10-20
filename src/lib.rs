@@ -8,8 +8,6 @@ mod panel;
 mod serde;
 mod xfconf;
 
-pub use xfconf::ClearPath;
-
 use ::serde::{Deserialize, Serialize};
 use anyhow::{Context, Result};
 use dbus::DBus;

@@ -71,7 +71,7 @@ enum TypedValue {
 }
 
 #[derive(Debug)]
-pub struct ClearPath {
+struct ClearPath {
     channel: String,
     parts: Vec<ClearPathPart>,
     props: ClearPathProps,
