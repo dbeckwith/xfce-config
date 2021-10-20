@@ -1,5 +1,10 @@
 use serde::{de, ser};
-use std::{collections::BTreeMap, iter::FromIterator};
+use std::{
+    collections::BTreeMap,
+    fmt,
+    iter::{self, FromIterator},
+    marker::PhantomData,
+};
 
 pub trait Id {
     type Id: Clone + Ord;
@@ -64,8 +69,26 @@ where
     where
         D: serde::Deserializer<'de>,
     {
-        // TODO: implement this without allocating a Vec
-        Vec::<T>::deserialize(deserializer)
-            .map(|items| items.into_iter().collect::<Self>())
+        struct Visitor<T>(PhantomData<T>);
+
+        impl<'de, T> de::Visitor<'de> for Visitor<T>
+        where
+            T: de::Deserialize<'de> + Id,
+        {
+            type Value = IdMap<T>;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "id mapped list")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                iter::from_fn(|| seq.next_element().transpose()).collect()
+            }
+        }
+
+        deserializer.deserialize_seq(Visitor(PhantomData))
     }
 }
