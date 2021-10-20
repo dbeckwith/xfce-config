@@ -1,5 +1,6 @@
 use crate::{
     cfg::{Applier as CfgApplier, Cfg, CfgPatch},
+    open_file,
     serde::IdMap,
     PatchRecorder,
 };
@@ -7,7 +8,6 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
-    fs,
     io,
     path::{Path, PathBuf},
 };
@@ -120,15 +120,12 @@ impl ConfigContent {
     fn read(path: PathBuf, kind: &Self) -> Result<Option<Self>> {
         match kind {
             ConfigContent::Cfg(_) => {
-                // TODO: maybe_open_file helper
-                let file = match fs::File::open(path) {
-                    Ok(file) => Ok(file),
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                        return Ok(None)
-                    },
-                    Err(error) => Err(error),
-                }
-                .context("error opening general config CFG file")?;
+                let file = match open_file(path)
+                    .context("error opening general config CFG file")?
+                {
+                    Some(file) => file,
+                    None => return Ok(None),
+                };
                 let reader = io::BufReader::new(file);
                 let cfg = Cfg::read(reader)
                     .context("error reading general config CFG file")?;

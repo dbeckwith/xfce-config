@@ -1,5 +1,6 @@
 use crate::{
     cfg::{Applier as CfgApplier, Cfg, CfgPatch},
+    open_file,
     PatchRecorder,
 };
 use anyhow::{Context, Result};
@@ -42,12 +43,8 @@ impl Gtk {
 
 impl Settings {
     pub fn read(dir: &Path) -> Result<Self> {
-        let file = match fs::File::open(dir.join("settings.ini")) {
-            Ok(file) => Ok(Some(file)),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error),
-        }
-        .context("error opening GTK settings file")?;
+        let file = open_file(dir.join("settings.ini"))
+            .context("error opening GTK settings file")?;
         let content = file
             .map(|file| {
                 let reader = io::BufReader::new(file);

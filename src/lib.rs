@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use dbus::DBus;
 use std::{
     fs,
-    io::{Read, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -192,4 +192,14 @@ enum PatchEvent<'a> {
     Cfg {
         content: &'a cfg::Cfg,
     },
+}
+
+fn open_file(path: impl AsRef<Path>) -> io::Result<Option<fs::File>> {
+    match fs::File::open(path) {
+        Ok(file) => Ok(Some(file)),
+        Err(error) if matches!(error.kind(), io::ErrorKind::NotFound) => {
+            Ok(None)
+        },
+        Err(error) => Err(error),
+    }
 }
