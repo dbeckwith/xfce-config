@@ -2,28 +2,27 @@ use crate::{dbus::DBus, serde::IdMap, PatchRecorder};
 use anyhow::{anyhow, bail, Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use std::{
-    borrow::Cow,
     collections::{btree_map, BTreeMap, BTreeSet},
     iter,
 };
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Xfconf<'a> {
+pub struct Xfconf {
     #[serde(default, skip_serializing_if = "Channels::is_empty")]
-    channels: Channels<'a>,
+    channels: Channels,
 }
 
-impl Xfconf<'_> {
+impl Xfconf {
     pub fn is_empty(&self) -> bool {
         self.channels.is_empty()
     }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-struct Channels<'a>(IdMap<Channel<'a>>);
+struct Channels(IdMap<Channel>);
 
-impl Channels<'_> {
+impl Channels {
     fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -31,16 +30,16 @@ impl Channels<'_> {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct Channel<'a> {
-    name: Cow<'a, str>,
+struct Channel {
+    name: String,
     #[serde(default, skip_serializing_if = "Properties::is_empty")]
-    props: Properties<'a>,
+    props: Properties,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-struct Properties<'a>(BTreeMap<Cow<'a, str>, Value<'a>>);
+struct Properties(BTreeMap<String, Value>);
 
-impl Properties<'_> {
+impl Properties {
     fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -48,45 +47,45 @@ impl Properties<'_> {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct Value<'a> {
+struct Value {
     #[serde(flatten)]
-    value: TypedValue<'a>,
+    value: TypedValue,
     #[serde(default, skip_serializing_if = "Properties::is_empty")]
-    props: Properties<'a>,
+    props: Properties,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "kebab-case")]
-enum TypedValue<'a> {
+enum TypedValue {
     Bool(bool),
     Int(i32),
     Uint(u32),
     Double(f64),
-    String(Cow<'a, str>),
-    Array(Vec<Value<'a>>),
+    String(String),
+    Array(Vec<Value>),
     Empty,
 }
 
 #[derive(Debug)]
-pub struct ClearPath<'a> {
-    channel: Cow<'a, str>,
-    parts: Vec<ClearPathPart<'a>>,
-    props: ClearPathProps<'a>,
+pub struct ClearPath {
+    channel: String,
+    parts: Vec<ClearPathPart>,
+    props: ClearPathProps,
 }
 
 #[derive(Debug)]
-struct ClearPathPart<'a> {
-    prop: Cow<'a, str>,
+struct ClearPathPart {
+    prop: String,
     prefix: bool,
 }
 
 #[derive(Debug)]
-struct ClearPathProps<'a> {
+struct ClearPathProps {
     value_changed: bool,
-    prefix: Option<Cow<'a, str>>,
+    prefix: Option<String>,
 }
 
-impl Xfconf<'_> {
+impl Xfconf {
     pub fn load() -> Result<Self> {
         Ok(Self {
             channels: Channels::load().context("error loading channels")?,
@@ -94,7 +93,7 @@ impl Xfconf<'_> {
     }
 }
 
-impl Channels<'_> {
+impl Channels {
     fn load() -> Result<Self> {
         let mut dbus = DBus::new("org.xfce.Xfconf", "/org/xfce/Xfconf")?;
         let channels = dbus
@@ -102,9 +101,7 @@ impl Channels<'_> {
             .try_child_value(0)
             .context("ListChannels had empty return value")?;
 
-        fn value_from_variant(
-            variant: glib::Variant,
-        ) -> Result<TypedValue<'static>> {
+        fn value_from_variant(variant: glib::Variant) -> Result<TypedValue> {
             variant
                 .try_get::<bool>()
                 .map(TypedValue::Bool)
@@ -112,10 +109,7 @@ impl Channels<'_> {
                 .or_else(|_| variant.try_get::<u32>().map(TypedValue::Uint))
                 .or_else(|_| variant.try_get::<f64>().map(TypedValue::Double))
                 .or_else(|_| {
-                    variant
-                        .try_get::<String>()
-                        .map(Cow::Owned)
-                        .map(TypedValue::String)
+                    variant.try_get::<String>().map(TypedValue::String)
                 })
                 .or_else(|_| {
                     variant
@@ -142,7 +136,7 @@ impl Channels<'_> {
 
         fn array_value_from_variant(
             variant: glib::Variant,
-        ) -> Result<TypedValue<'static>> {
+        ) -> Result<TypedValue> {
             variant
                 .try_get::<bool>()
                 .map(TypedValue::Bool)
@@ -150,10 +144,7 @@ impl Channels<'_> {
                 .or_else(|_| variant.try_get::<u32>().map(TypedValue::Uint))
                 .or_else(|_| variant.try_get::<f64>().map(TypedValue::Double))
                 .or_else(|_| {
-                    variant
-                        .try_get::<String>()
-                        .map(Cow::Owned)
-                        .map(TypedValue::String)
+                    variant.try_get::<String>().map(TypedValue::String)
                 })
                 .with_context(|| {
                     format!(
@@ -167,9 +158,9 @@ impl Channels<'_> {
             .array_iter_str()
             .context("error reading iterating channels")?
             .map(|name| {
-                let name = Cow::<'_, str>::Owned(name.to_string());
+                let name = name.to_owned();
                 let flattened_props = dbus
-                    .call("GetAllProperties", (name.as_ref(), "/"))?
+                    .call("GetAllProperties", (name.as_str(), "/"))?
                     .try_child_value(0)
                     .context("GetAllProperties had empty return value")?
                     .iter()
@@ -188,7 +179,7 @@ impl Channels<'_> {
                     let mut path_parts = path
                         .split('/')
                         .skip(1)
-                        .map(|path_part| Cow::Owned(path_part.to_owned()));
+                        .map(|path_part| path_part.to_owned());
                     // traverse prop tree for all but last path part
                     let props = path_parts.by_ref().take(path_len - 1).fold(
                         &mut props,
@@ -229,15 +220,15 @@ impl Channels<'_> {
     }
 }
 
-impl<'a> crate::serde::Id for Channel<'a> {
-    type Id = Cow<'a, str>;
+impl crate::serde::Id for Channel {
+    type Id = String;
 
     fn id(&self) -> &Self::Id {
         &self.name
     }
 }
 
-impl ClearPath<'static> {
+impl ClearPath {
     pub fn parse(input: &str) -> Result<Self> {
         let mut input_parts = input.split('.').peekable();
         let channel = input_parts.next().context("missing channel")?;
@@ -258,7 +249,7 @@ impl ClearPath<'static> {
                 };
                 props = Some(ClearPathProps {
                     value_changed,
-                    prefix: prefix.map(|prefix| prefix.to_owned().into()),
+                    prefix: prefix.map(|prefix| prefix.to_owned()),
                 });
             } else {
                 let (prop, prefix) = if let Some(prop) = part.strip_suffix('*')
@@ -268,7 +259,7 @@ impl ClearPath<'static> {
                     (part, false)
                 };
                 parts.push(ClearPathPart {
-                    prop: prop.to_owned().into(),
+                    prop: prop.to_owned(),
                     prefix,
                 });
             }
@@ -278,7 +269,7 @@ impl ClearPath<'static> {
         }
         let props = props.context("missing final prop specifier")?;
         Ok(Self {
-            channel: channel.to_owned().into(),
+            channel: channel.to_owned(),
             parts,
             props,
         })
@@ -287,17 +278,13 @@ impl ClearPath<'static> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct XfconfPatch<'a> {
+pub struct XfconfPatch {
     #[serde(skip_serializing_if = "ChannelsPatch::is_empty")]
-    channels: ChannelsPatch<'a>,
+    channels: ChannelsPatch,
 }
 
-impl<'a> XfconfPatch<'a> {
-    pub fn diff(
-        old: Xfconf<'a>,
-        new: Xfconf<'a>,
-        clear_paths: &[ClearPath<'_>],
-    ) -> Self {
+impl XfconfPatch {
+    pub fn diff(old: Xfconf, new: Xfconf, clear_paths: &[ClearPath]) -> Self {
         Self {
             channels: ChannelsPatch::diff(
                 old.channels,
@@ -323,18 +310,18 @@ impl<'a> XfconfPatch<'a> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
-struct ChannelsPatch<'a> {
+struct ChannelsPatch {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    changed: BTreeMap<Cow<'a, str>, ChannelPatch<'a>>,
+    changed: BTreeMap<String, ChannelPatch>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    added: Vec<Channel<'a>>,
+    added: Vec<Channel>,
 }
 
-impl<'a> ChannelsPatch<'a> {
+impl ChannelsPatch {
     fn diff(
-        mut old: Channels<'a>,
-        new: Channels<'a>,
-        clear_paths: &[ClearPath<'_>],
+        mut old: Channels,
+        new: Channels,
+        clear_paths: &[ClearPath],
     ) -> Self {
         let mut changed = BTreeMap::new();
         let mut added = Vec::new();
@@ -359,19 +346,15 @@ impl<'a> ChannelsPatch<'a> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
-struct ChannelPatch<'a> {
+struct ChannelPatch {
     #[serde(skip_serializing_if = "SimplePatch::is_empty")]
-    name: SimplePatch<Cow<'a, str>>,
+    name: SimplePatch<String>,
     #[serde(skip_serializing_if = "PropertiesPatch::is_empty")]
-    props: PropertiesPatch<'a>,
+    props: PropertiesPatch,
 }
 
-impl<'a> ChannelPatch<'a> {
-    fn diff(
-        old: Channel<'a>,
-        new: Channel<'a>,
-        clear_paths: &[ClearPath<'_>],
-    ) -> Self {
+impl ChannelPatch {
+    fn diff(old: Channel, new: Channel, clear_paths: &[ClearPath]) -> Self {
         let path = DiffPath {
             channel: None,
             props: im::Vector::new(),
@@ -396,26 +379,26 @@ impl<'a> ChannelPatch<'a> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
-struct PropertiesPatch<'a> {
+struct PropertiesPatch {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    changed: BTreeMap<Cow<'a, str>, ValuePatch<'a>>,
+    changed: BTreeMap<String, ValuePatch>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    added: BTreeMap<Cow<'a, str>, Value<'a>>,
+    added: BTreeMap<String, Value>,
     #[serde(skip_serializing_if = "BTreeSet::is_empty")]
-    removed: BTreeSet<Cow<'a, str>>,
+    removed: BTreeSet<String>,
 }
 
-enum PropertiesCtx<'a> {
-    Channel(Channel<'a>, Channel<'a>),
-    Value(Value<'a>, Value<'a>),
+enum PropertiesCtx {
+    Channel(Channel, Channel),
+    Value(Value, Value),
 }
 
-impl<'a> ClearPath<'a> {
+impl ClearPath {
     fn get_remove_keys_filter(
-        &'a self,
-        path: &DiffPath<'_>,
-        ctx: &PropertiesCtx<'_>,
-    ) -> Option<Box<dyn Fn(&Cow<'_, str>) -> bool + 'a>> {
+        &self,
+        path: &DiffPath,
+        ctx: &PropertiesCtx,
+    ) -> Option<Box<dyn Fn(&String) -> bool + '_>> {
         let ((_, channel), prop) = path.channel.as_ref()?;
         if channel.name != self.channel {
             return None;
@@ -444,20 +427,20 @@ impl<'a> ClearPath<'a> {
             }
         }
         if let Some(prefix) = &self.props.prefix {
-            Some(Box::new(move |key| key.starts_with(prefix.as_ref())))
+            Some(Box::new(move |key| key.starts_with(prefix.as_str())))
         } else {
             Some(Box::new(move |_key| true))
         }
     }
 }
 
-impl<'a> PropertiesPatch<'a> {
+impl PropertiesPatch {
     fn diff(
-        mut old: Properties<'a>,
-        new: Properties<'a>,
-        path: &DiffPath<'a>,
-        ctx: PropertiesCtx<'a>,
-        clear_paths: &[ClearPath<'_>],
+        mut old: Properties,
+        new: Properties,
+        path: &DiffPath,
+        ctx: PropertiesCtx,
+        clear_paths: &[ClearPath],
     ) -> Self {
         let mut changed = BTreeMap::new();
         let mut added = BTreeMap::new();
@@ -510,19 +493,19 @@ impl<'a> PropertiesPatch<'a> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
-struct ValuePatch<'a> {
+struct ValuePatch {
     #[serde(skip_serializing_if = "TypedValuePatch::is_empty")]
-    value: TypedValuePatch<'a>,
+    value: TypedValuePatch,
     #[serde(skip_serializing_if = "PropertiesPatch::is_empty")]
-    props: PropertiesPatch<'a>,
+    props: PropertiesPatch,
 }
 
-impl<'a> ValuePatch<'a> {
+impl ValuePatch {
     fn diff(
-        old: Value<'a>,
-        new: Value<'a>,
-        path: &DiffPath<'a>,
-        clear_paths: &[ClearPath<'_>],
+        old: Value,
+        new: Value,
+        path: &DiffPath,
+        clear_paths: &[ClearPath],
     ) -> Self {
         let properties_ctx = PropertiesCtx::Value(old.clone(), new.clone());
         Self {
@@ -544,19 +527,19 @@ impl<'a> ValuePatch<'a> {
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", content = "value", rename_all = "kebab-case")]
-enum TypedValuePatch<'a> {
+enum TypedValuePatch {
     Bool(SimplePatch<bool>),
     Int(SimplePatch<i32>),
     Uint(SimplePatch<u32>),
     Double(SimplePatch<f64>),
-    String(SimplePatch<Cow<'a, str>>),
-    Array(SimplePatch<Vec<Value<'a>>>),
+    String(SimplePatch<String>),
+    Array(SimplePatch<Vec<Value>>),
     Empty,
-    Changed(TypedValue<'a>),
+    Changed(TypedValue),
 }
 
-impl<'a> TypedValuePatch<'a> {
-    fn diff(old: TypedValue<'a>, new: TypedValue<'a>) -> Self {
+impl TypedValuePatch {
+    fn diff(old: TypedValue, new: TypedValue) -> Self {
         match (old, new) {
             (TypedValue::Bool(old_bool), TypedValue::Bool(new_bool)) => {
                 Self::Bool(SimplePatch::diff(old_bool, new_bool))
@@ -619,22 +602,19 @@ where
 }
 
 #[derive(Debug, Clone)]
-struct DiffPath<'a> {
-    channel: Option<((Channel<'a>, Channel<'a>), Cow<'a, str>)>,
-    props: im::Vector<((Value<'a>, Value<'a>), Cow<'a, str>)>,
+struct DiffPath {
+    channel: Option<((Channel, Channel), String)>,
+    props: im::Vector<((Value, Value), String)>,
 }
 
-impl<'a> DiffPath<'a> {
-    fn with_channel(
-        &self,
-        channel: ((Channel<'a>, Channel<'a>), Cow<'a, str>),
-    ) -> Self {
+impl DiffPath {
+    fn with_channel(&self, channel: ((Channel, Channel), String)) -> Self {
         let mut path = self.clone();
         path.channel = Some(channel);
         path
     }
 
-    fn push(&self, prop: ((Value<'a>, Value<'a>), Cow<'a, str>)) -> Self {
+    fn push(&self, prop: ((Value, Value), String)) -> Self {
         let mut path = self.clone();
         path.props.push_back(prop);
         path
@@ -660,9 +640,7 @@ impl<'a> Applier<'a> {
         })
     }
 
-    fn path_to_channel_property<'p>(
-        path: &'p ApplyPath<'_>,
-    ) -> (&'p str, String) {
+    fn path_to_channel_property(path: &ApplyPath) -> (&str, String) {
         (
             &*path.channel,
             path.props
@@ -690,11 +668,7 @@ impl<'a> Applier<'a> {
         Ok(())
     }
 
-    fn set(
-        &mut self,
-        path: &ApplyPath<'_>,
-        value: glib::Variant,
-    ) -> Result<()> {
+    fn set(&mut self, path: &ApplyPath, value: glib::Variant) -> Result<()> {
         let (channel, property) = Self::path_to_channel_property(path);
         let recursive = true;
         if self
@@ -711,35 +685,27 @@ impl<'a> Applier<'a> {
         self.call("SetProperty", (channel, property.as_str(), value))
     }
 
-    fn set_bool(&mut self, path: &ApplyPath<'_>, b: bool) -> Result<()> {
+    fn set_bool(&mut self, path: &ApplyPath, b: bool) -> Result<()> {
         self.set(path, glib::variant::ToVariant::to_variant(&b))
     }
 
-    fn set_int(&mut self, path: &ApplyPath<'_>, n: i32) -> Result<()> {
+    fn set_int(&mut self, path: &ApplyPath, n: i32) -> Result<()> {
         self.set(path, glib::variant::ToVariant::to_variant(&n))
     }
 
-    fn set_uint(&mut self, path: &ApplyPath<'_>, n: u32) -> Result<()> {
+    fn set_uint(&mut self, path: &ApplyPath, n: u32) -> Result<()> {
         self.set(path, glib::variant::ToVariant::to_variant(&n))
     }
 
-    fn set_double(&mut self, path: &ApplyPath<'_>, f: f64) -> Result<()> {
+    fn set_double(&mut self, path: &ApplyPath, f: f64) -> Result<()> {
         self.set(path, glib::variant::ToVariant::to_variant(&f))
     }
 
-    fn set_string(
-        &mut self,
-        path: &ApplyPath<'_>,
-        s: Cow<'_, str>,
-    ) -> Result<()> {
-        self.set(path, glib::variant::ToVariant::to_variant(&*s))
+    fn set_string(&mut self, path: &ApplyPath, s: String) -> Result<()> {
+        self.set(path, glib::variant::ToVariant::to_variant(&s))
     }
 
-    fn set_array(
-        &mut self,
-        path: &ApplyPath<'_>,
-        array: Vec<Value<'_>>,
-    ) -> Result<()> {
+    fn set_array(&mut self, path: &ApplyPath, array: Vec<Value>) -> Result<()> {
         self.set(
             path,
             glib::variant::ToVariant::to_variant(
@@ -773,7 +739,7 @@ impl<'a> Applier<'a> {
         )
     }
 
-    fn remove(&mut self, path: &ApplyPath<'_>) -> Result<()> {
+    fn remove(&mut self, path: &ApplyPath) -> Result<()> {
         let (channel, property) = Self::path_to_channel_property(path);
         let recursive = true;
         self.call("ResetProperty", (channel, property.as_str(), recursive))
@@ -782,22 +748,22 @@ impl<'a> Applier<'a> {
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-pub enum PatchEvent<'a> {
+pub enum PatchEvent {
     #[serde(rename_all = "kebab-case")]
     XfconfCall {
-        method: &'a str,
+        method: &'static str,
         args: serde_json::Value,
     },
 }
 
-impl XfconfPatch<'_> {
+impl XfconfPatch {
     pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         self.channels.apply(applier)?;
         Ok(())
     }
 }
 
-impl ChannelsPatch<'_> {
+impl ChannelsPatch {
     fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         for (name, channel_patch) in self.changed {
             channel_patch.apply(applier, name)?;
@@ -810,20 +776,20 @@ impl ChannelsPatch<'_> {
 }
 
 #[derive(Debug, Clone)]
-struct ApplyPath<'a> {
-    channel: Cow<'a, str>,
-    props: im::Vector<Cow<'a, str>>,
+struct ApplyPath {
+    channel: String,
+    props: im::Vector<String>,
 }
 
-impl<'a> ApplyPath<'a> {
-    fn push(&self, prop: Cow<'a, str>) -> Self {
+impl ApplyPath {
+    fn push(&self, prop: String) -> Self {
         let mut path = self.clone();
         path.props.push_back(prop);
         path
     }
 }
 
-impl Channel<'_> {
+impl Channel {
     fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         let path = ApplyPath {
             channel: self.name,
@@ -834,12 +800,8 @@ impl Channel<'_> {
     }
 }
 
-impl<'a> Properties<'a> {
-    fn apply(
-        self,
-        applier: &mut Applier<'_>,
-        path: &ApplyPath<'a>,
-    ) -> Result<()> {
+impl Properties {
+    fn apply(self, applier: &mut Applier<'_>, path: &ApplyPath) -> Result<()> {
         for (name, value) in self.0 {
             let path = path.push(name);
             value.apply(applier, &path)?;
@@ -848,24 +810,16 @@ impl<'a> Properties<'a> {
     }
 }
 
-impl<'a> Value<'a> {
-    fn apply(
-        self,
-        applier: &mut Applier<'_>,
-        path: &ApplyPath<'a>,
-    ) -> Result<()> {
+impl Value {
+    fn apply(self, applier: &mut Applier<'_>, path: &ApplyPath) -> Result<()> {
         self.value.apply(applier, path)?;
         self.props.apply(applier, path)?;
         Ok(())
     }
 }
 
-impl<'a> TypedValue<'a> {
-    fn apply(
-        self,
-        applier: &mut Applier<'_>,
-        path: &ApplyPath<'a>,
-    ) -> Result<()> {
+impl TypedValue {
+    fn apply(self, applier: &mut Applier<'_>, path: &ApplyPath) -> Result<()> {
         match self {
             Self::Bool(value) => applier.set_bool(path, value),
             Self::Int(value) => applier.set_int(path, value),
@@ -878,12 +832,8 @@ impl<'a> TypedValue<'a> {
     }
 }
 
-impl<'a> ChannelPatch<'a> {
-    fn apply(
-        self,
-        applier: &mut Applier<'_>,
-        name: Cow<'a, str>,
-    ) -> Result<()> {
+impl ChannelPatch {
+    fn apply(self, applier: &mut Applier<'_>, name: String) -> Result<()> {
         let path = ApplyPath {
             channel: name,
             props: im::Vector::new(),
@@ -893,12 +843,8 @@ impl<'a> ChannelPatch<'a> {
     }
 }
 
-impl<'a> PropertiesPatch<'a> {
-    fn apply(
-        self,
-        applier: &mut Applier<'_>,
-        path: &ApplyPath<'a>,
-    ) -> Result<()> {
+impl PropertiesPatch {
+    fn apply(self, applier: &mut Applier<'_>, path: &ApplyPath) -> Result<()> {
         // keys of changed, added, removed are disjoint so order doesn't matter
         for (name, value_patch) in self.changed {
             let path = path.push(name);
@@ -916,24 +862,16 @@ impl<'a> PropertiesPatch<'a> {
     }
 }
 
-impl<'a> ValuePatch<'a> {
-    fn apply(
-        self,
-        applier: &mut Applier<'_>,
-        path: &ApplyPath<'a>,
-    ) -> Result<()> {
+impl ValuePatch {
+    fn apply(self, applier: &mut Applier<'_>, path: &ApplyPath) -> Result<()> {
         self.value.apply(applier, path)?;
         self.props.apply(applier, path)?;
         Ok(())
     }
 }
 
-impl<'a> TypedValuePatch<'a> {
-    fn apply(
-        self,
-        applier: &mut Applier<'_>,
-        path: &ApplyPath<'a>,
-    ) -> Result<()> {
+impl TypedValuePatch {
+    fn apply(self, applier: &mut Applier<'_>, path: &ApplyPath) -> Result<()> {
         match self {
             Self::Bool(value_patch) => value_patch.apply(applier, path),
             Self::Int(value_patch) => value_patch.apply(applier, path),
@@ -953,7 +891,7 @@ macro_rules! impl_simple_patch_apply {
             fn apply(
                 self,
                 applier: &mut Applier<'_>,
-                path: &ApplyPath<'_>,
+                path: &ApplyPath,
             ) -> Result<()> {
                 if let Some(value) = self.value {
                     applier.$set(path, value)
@@ -968,8 +906,8 @@ impl_simple_patch_apply!(bool, set_bool);
 impl_simple_patch_apply!(i32, set_int);
 impl_simple_patch_apply!(u32, set_uint);
 impl_simple_patch_apply!(f64, set_double);
-impl_simple_patch_apply!(Cow<'_, str>, set_string);
-impl_simple_patch_apply!(Vec<Value<'_>>, set_array);
+impl_simple_patch_apply!(String, set_string);
+impl_simple_patch_apply!(Vec<Value>, set_array);
 
 fn variant_to_json(v: glib::Variant) -> Result<serde_json::Value> {
     match v.type_().to_str() {
@@ -995,7 +933,7 @@ mod tests {
 
     #[test]
     fn deserialize() {
-        let channel: Channel<'static> = serde_json::from_str(
+        let channel: Channel = serde_json::from_str(
             r#"
             {
                 "name": "channel",

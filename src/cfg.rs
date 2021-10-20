@@ -2,7 +2,6 @@ use crate::PatchRecorder;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
-    borrow::Cow,
     collections::BTreeMap,
     fs,
     io::{self, BufRead, Write},
@@ -10,14 +9,14 @@ use std::{
 };
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct Cfg<'a> {
+pub struct Cfg {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub root: BTreeMap<Cow<'a, str>, Cow<'a, str>>,
+    pub root: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub sections: BTreeMap<Cow<'a, str>, BTreeMap<Cow<'a, str>, Cow<'a, str>>>,
+    pub sections: BTreeMap<String, BTreeMap<String, String>>,
 }
 
-impl Cfg<'_> {
+impl Cfg {
     pub fn read<R>(reader: R) -> Result<Self>
     where
         R: BufRead,
@@ -30,11 +29,8 @@ impl Cfg<'_> {
                 // ignore
             } else if let Some(line) = line.strip_prefix('[') {
                 if let Some(title) = line.strip_suffix(']') {
-                    last_section = Some(
-                        cfg.sections
-                            .entry(title.to_owned().into())
-                            .or_default(),
-                    );
+                    last_section =
+                        Some(cfg.sections.entry(title.to_owned()).or_default());
                 } else {
                     bail!("section name missing trailing bracket");
                 }
@@ -42,7 +38,7 @@ impl Cfg<'_> {
                 last_section
                     .as_deref_mut()
                     .unwrap_or(&mut cfg.root)
-                    .insert(key.to_owned().into(), value.to_owned().into());
+                    .insert(key.to_owned(), value.to_owned());
             } else {
                 bail!("line missing key-value separator");
             }
@@ -80,15 +76,15 @@ impl Cfg<'_> {
 }
 
 #[derive(Debug, Serialize)]
-pub struct CfgPatch<'a> {
+pub struct CfgPatch {
     #[serde(skip_serializing_if = "MapPatch::is_empty")]
-    root: MapPatch<'a, StrPatch<'a>>,
+    root: MapPatch<StrPatch>,
     #[serde(skip_serializing_if = "MapPatch::is_empty")]
-    sections: MapPatch<'a, MapPatch<'a, StrPatch<'a>>>,
+    sections: MapPatch<MapPatch<StrPatch>>,
 }
 
-impl<'a> CfgPatch<'a> {
-    pub fn diff(old: Cfg<'a>, new: Cfg<'a>) -> Self {
+impl CfgPatch {
+    pub fn diff(old: Cfg, new: Cfg) -> Self {
         Self {
             root: MapPatch::diff(old.root, new.root),
             sections: MapPatch::diff(old.sections, new.sections),
@@ -99,7 +95,7 @@ impl<'a> CfgPatch<'a> {
         self.root.is_empty() && self.sections.is_empty()
     }
 
-    fn apply_to_old(self, old: &mut Cfg<'a>) {
+    fn apply_to_old(self, old: &mut Cfg) {
         self.root.apply_to_old(&mut old.root);
         self.sections.apply_to_old(&mut old.sections);
     }
@@ -117,21 +113,21 @@ trait Patch {
 
 #[derive(Debug, Serialize)]
 #[serde(bound(serialize = "T: Patch + Serialize, T::Data: Serialize"))]
-struct MapPatch<'a, T>
+struct MapPatch<T>
 where
     T: Patch,
 {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    changed: BTreeMap<Cow<'a, str>, T>,
+    changed: BTreeMap<String, T>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    added: BTreeMap<Cow<'a, str>, T::Data>,
+    added: BTreeMap<String, T::Data>,
 }
 
-impl<'a, T> Patch for MapPatch<'a, T>
+impl<T> Patch for MapPatch<T>
 where
     T: Patch,
 {
-    type Data = BTreeMap<Cow<'a, str>, T::Data>;
+    type Data = BTreeMap<String, T::Data>;
 
     fn diff(mut old: Self::Data, new: Self::Data) -> Self {
         let mut changed = BTreeMap::new();
@@ -166,12 +162,12 @@ where
 }
 
 #[derive(Debug, Serialize)]
-struct StrPatch<'a> {
-    value: Option<Cow<'a, str>>,
+struct StrPatch {
+    value: Option<String>,
 }
 
-impl<'a> Patch for StrPatch<'a> {
-    type Data = Cow<'a, str>;
+impl Patch for StrPatch {
+    type Data = String;
 
     fn diff(old: Self::Data, new: Self::Data) -> Self {
         Self {
@@ -209,7 +205,7 @@ impl<'a> Applier<'a> {
         }
     }
 
-    fn write_cfg(&mut self, cfg: &Cfg<'_>) -> Result<()> {
+    fn write_cfg(&mut self, cfg: &Cfg) -> Result<()> {
         self.patch_recorder
             .log(&crate::PatchEvent::Cfg { content: cfg })
             .context("error logging CFG write")?;
@@ -230,7 +226,7 @@ impl<'a> Applier<'a> {
         Ok(())
     }
 
-    fn update_cfg(&mut self, cfg_patch: CfgPatch<'_>) -> Result<()> {
+    fn update_cfg(&mut self, cfg_patch: CfgPatch) -> Result<()> {
         let mut cfg = Cfg::read(
             fs::File::open(&self.path)
                 .map(io::BufReader::new)
@@ -243,14 +239,14 @@ impl<'a> Applier<'a> {
     }
 }
 
-impl Cfg<'_> {
+impl Cfg {
     pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         applier.write_cfg(&self)?;
         Ok(())
     }
 }
 
-impl CfgPatch<'_> {
+impl CfgPatch {
     pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         applier.update_cfg(self)?;
         Ok(())

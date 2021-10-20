@@ -11,7 +11,7 @@ struct Args {
     #[structopt(long)]
     apply: bool,
     #[structopt(long = "clear", parse(try_from_str = ClearPath::parse))]
-    clear_paths: Option<Vec<ClearPath<'static>>>,
+    clear_paths: Option<Vec<ClearPath>>,
 }
 
 fn main() -> Result<()> {

@@ -21,31 +21,31 @@ use std::{
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct XfceConfig<'a> {
+pub struct XfceConfig {
     #[serde(default, skip_serializing_if = "xfconf::Xfconf::is_empty")]
-    xfconf: xfconf::Xfconf<'a>,
+    xfconf: xfconf::Xfconf,
     #[serde(default, skip_serializing_if = "panel::Panel::is_empty")]
-    panel: panel::Panel<'a>,
+    panel: panel::Panel,
     #[serde(default, skip_serializing_if = "gtk::Gtk::is_empty")]
-    gtk: gtk::Gtk<'a>,
+    gtk: gtk::Gtk,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct XfceConfigPatch<'a> {
+pub struct XfceConfigPatch {
     #[serde(skip_serializing_if = "xfconf::XfconfPatch::is_empty")]
-    xfconf: xfconf::XfconfPatch<'a>,
+    xfconf: xfconf::XfconfPatch,
     #[serde(skip_serializing_if = "panel::PanelPatch::is_empty")]
-    panel: panel::PanelPatch<'a>,
+    panel: panel::PanelPatch,
     #[serde(skip_serializing_if = "gtk::GtkPatch::is_empty")]
-    gtk: gtk::GtkPatch<'a>,
+    gtk: gtk::GtkPatch,
 }
 
-impl<'a> XfceConfigPatch<'a> {
+impl XfceConfigPatch {
     pub fn diff(
-        old: XfceConfig<'a>,
-        new: XfceConfig<'a>,
-        clear_paths: &[ClearPath<'_>],
+        old: XfceConfig,
+        new: XfceConfig,
+        clear_paths: &[ClearPath],
     ) -> Self {
         XfceConfigPatch {
             xfconf: xfconf::XfconfPatch::diff(
@@ -63,7 +63,7 @@ impl<'a> XfceConfigPatch<'a> {
     }
 }
 
-impl XfceConfig<'static> {
+impl XfceConfig {
     pub fn from_json_reader<R>(reader: R) -> Result<Self>
     where
         R: Read,
@@ -114,7 +114,7 @@ impl Applier {
     }
 }
 
-impl XfceConfigPatch<'_> {
+impl XfceConfigPatch {
     pub fn apply(self, applier: &mut Applier) -> Result<()> {
         let panel_config_changed =
             !self.panel.is_empty() || self.xfconf.has_panel_changes();
@@ -170,10 +170,10 @@ impl PatchRecorder {
 #[derive(Serialize)]
 #[serde(tag = "type", content = "value", rename_all = "kebab-case")]
 enum PatchEvent<'a> {
-    Channel(xfconf::PatchEvent<'a>),
+    Channel(xfconf::PatchEvent),
     Panel(panel::PatchEvent<'a>),
     #[serde(rename_all = "kebab-case")]
     Cfg {
-        content: &'a cfg::Cfg<'a>,
+        content: &'a cfg::Cfg,
     },
 }

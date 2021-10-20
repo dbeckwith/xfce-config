@@ -7,7 +7,6 @@ use anyhow::{bail, Context, Result};
 use cfg_if::cfg_if;
 use serde::{ser, Deserialize, Serialize};
 use std::{
-    borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     fmt,
     fs,
@@ -17,21 +16,21 @@ use std::{
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Panel<'a> {
+pub struct Panel {
     #[serde(default, skip_serializing_if = "PluginConfigs::is_empty")]
-    plugin_configs: PluginConfigs<'a>,
+    plugin_configs: PluginConfigs,
 }
 
-impl Panel<'_> {
+impl Panel {
     pub fn is_empty(&self) -> bool {
         self.plugin_configs.is_empty()
     }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-struct PluginConfigs<'a>(IdMap<PluginConfig<'a>>);
+struct PluginConfigs(IdMap<PluginConfig>);
 
-impl PluginConfigs<'_> {
+impl PluginConfigs {
     fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -39,25 +38,25 @@ impl PluginConfigs<'_> {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct PluginConfig<'a> {
+struct PluginConfig {
     #[serde(rename = "plugin")]
-    id: PluginId<'a>,
-    file: PluginConfigFile<'a>,
+    id: PluginId,
+    file: PluginConfigFile,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
-struct PluginId<'a> {
-    r#type: Cow<'a, str>,
+struct PluginId {
+    r#type: String,
     id: u64,
 }
 
-impl fmt::Display for PluginId<'_> {
+impl fmt::Display for PluginId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}-{}", self.r#type, self.id)
     }
 }
 
-impl ser::Serialize for PluginId<'_> {
+impl ser::Serialize for PluginId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: ser::Serializer,
@@ -68,38 +67,38 @@ impl ser::Serialize for PluginId<'_> {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-enum PluginConfigFile<'a> {
-    Rc(Cfg<'a>),
-    DesktopDir(DesktopDir<'a>),
+enum PluginConfigFile {
+    Rc(Cfg),
+    DesktopDir(DesktopDir),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct DesktopDir<'a> {
-    files: IdMap<DesktopFile<'a>>,
+struct DesktopDir {
+    files: IdMap<DesktopFile>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct DesktopFile<'a> {
+struct DesktopFile {
     id: u64,
-    content: DesktopFileContent<'a>,
+    content: DesktopFileContent,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-enum DesktopFileContent<'a> {
-    Cfg(Cfg<'a>),
-    Link(Link<'a>),
+enum DesktopFileContent {
+    Cfg(Cfg),
+    Link(Link),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct Link<'a> {
-    path: Cow<'a, Path>,
+struct Link {
+    path: PathBuf,
 }
 
-impl Panel<'static> {
+impl Panel {
     pub fn read(dir: &Path) -> Result<Self> {
         Ok(Self {
             plugin_configs: PluginConfigs::read(dir)
@@ -108,7 +107,7 @@ impl Panel<'static> {
     }
 }
 
-impl PluginConfigs<'static> {
+impl PluginConfigs {
     fn read(dir: &Path) -> Result<Self> {
         dir.read_dir()
             .context("error reading dir")?
@@ -129,14 +128,14 @@ impl PluginConfigs<'static> {
     }
 }
 
-impl PluginConfig<'static> {
+impl PluginConfig {
     fn read(path: &Path) -> Result<Option<Self>> {
         let id = (|| {
             let file_name = path.file_stem()?;
             let file_name = file_name.to_str()?;
             let (r#type, id) = file_name.rsplit_once('-')?;
             let id = id.parse().ok()?;
-            let r#type = r#type.to_owned().into();
+            let r#type = r#type.to_owned();
             Some(PluginId { id, r#type })
         })();
         let id = if let Some(id) = id {
@@ -176,7 +175,7 @@ impl PluginConfig<'static> {
                         let path = path
                             .read_link()
                             .context("error reading desktop link")?;
-                        DesktopFileContent::Link(Link { path: path.into() })
+                        DesktopFileContent::Link(Link { path })
                     } else {
                         let file = fs::File::open(path)
                             .context("error opening desktop file")?;
@@ -209,15 +208,15 @@ impl PluginConfig<'static> {
     }
 }
 
-impl<'a> crate::serde::Id for PluginConfig<'a> {
-    type Id = PluginId<'a>;
+impl crate::serde::Id for PluginConfig {
+    type Id = PluginId;
 
     fn id(&self) -> &Self::Id {
         &self.id
     }
 }
 
-impl crate::serde::Id for DesktopFile<'_> {
+impl crate::serde::Id for DesktopFile {
     type Id = u64;
 
     fn id(&self) -> &Self::Id {
@@ -287,13 +286,13 @@ where
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct PanelPatch<'a> {
+pub struct PanelPatch {
     #[serde(skip_serializing_if = "PluginConfigsPatch::is_empty")]
-    plugin_configs: PluginConfigsPatch<'a>,
+    plugin_configs: PluginConfigsPatch,
 }
 
-impl<'a> PanelPatch<'a> {
-    pub fn diff(old: Panel<'a>, new: Panel<'a>) -> Self {
+impl PanelPatch {
+    pub fn diff(old: Panel, new: Panel) -> Self {
         Self {
             plugin_configs: PluginConfigsPatch::diff(
                 old.plugin_configs,
@@ -308,10 +307,10 @@ impl<'a> PanelPatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
-struct PluginConfigsPatch<'a>(MapPatch<PluginId<'a>, PluginConfigPatch<'a>>);
+struct PluginConfigsPatch(MapPatch<PluginId, PluginConfigPatch>);
 
-impl<'a> PluginConfigsPatch<'a> {
-    fn diff(old: PluginConfigs<'a>, new: PluginConfigs<'a>) -> Self {
+impl PluginConfigsPatch {
+    fn diff(old: PluginConfigs, new: PluginConfigs) -> Self {
         Self(MapPatch::diff((old.0).0, (new.0).0))
     }
 
@@ -321,14 +320,14 @@ impl<'a> PluginConfigsPatch<'a> {
 }
 
 #[derive(Debug, Serialize)]
-enum PluginConfigPatch<'a> {
-    Rc(RcPatch<'a>),
-    DesktopDir(DesktopDirPatch<'a>),
-    Changed(PluginConfig<'a>),
+enum PluginConfigPatch {
+    Rc(RcPatch),
+    DesktopDir(DesktopDirPatch),
+    Changed(PluginConfig),
 }
 
-impl<'a> Patch for PluginConfigPatch<'a> {
-    type Data = PluginConfig<'a>;
+impl Patch for PluginConfigPatch {
+    type Data = PluginConfig;
 
     fn diff(old: Self::Data, new: Self::Data) -> Self {
         match (old, new) {
@@ -370,13 +369,13 @@ impl<'a> Patch for PluginConfigPatch<'a> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
-struct RcPatch<'a> {
-    id: PluginId<'a>,
-    cfg: CfgPatch<'a>,
+struct RcPatch {
+    id: PluginId,
+    cfg: CfgPatch,
 }
 
-impl<'a> Patch for RcPatch<'a> {
-    type Data = (PluginId<'a>, Cfg<'a>);
+impl Patch for RcPatch {
+    type Data = (PluginId, Cfg);
 
     fn diff(old: Self::Data, new: Self::Data) -> Self {
         Self {
@@ -392,13 +391,13 @@ impl<'a> Patch for RcPatch<'a> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
-struct DesktopDirPatch<'a> {
-    id: PluginId<'a>,
-    files: MapPatch<u64, DesktopFilePatch<'a>>,
+struct DesktopDirPatch {
+    id: PluginId,
+    files: MapPatch<u64, DesktopFilePatch>,
 }
 
-impl<'a> Patch for DesktopDirPatch<'a> {
-    type Data = (PluginId<'a>, DesktopDir<'a>);
+impl Patch for DesktopDirPatch {
+    type Data = (PluginId, DesktopDir);
 
     fn diff(old: Self::Data, new: Self::Data) -> Self {
         Self {
@@ -414,14 +413,14 @@ impl<'a> Patch for DesktopDirPatch<'a> {
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-enum DesktopFilePatch<'a> {
-    Cfg(DesktopFileCfgPatch<'a>),
-    Link(LinkPatch<'a>),
-    Changed(DesktopFile<'a>),
+enum DesktopFilePatch {
+    Cfg(DesktopFileCfgPatch),
+    Link(LinkPatch),
+    Changed(DesktopFile),
 }
 
-impl<'a> Patch for DesktopFilePatch<'a> {
-    type Data = DesktopFile<'a>;
+impl Patch for DesktopFilePatch {
+    type Data = DesktopFile;
 
     fn diff(old: Self::Data, new: Self::Data) -> Self {
         match (old, new) {
@@ -468,13 +467,13 @@ impl<'a> Patch for DesktopFilePatch<'a> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
-struct DesktopFileCfgPatch<'a> {
+struct DesktopFileCfgPatch {
     id: u64,
-    cfg: CfgPatch<'a>,
+    cfg: CfgPatch,
 }
 
-impl<'a> Patch for DesktopFileCfgPatch<'a> {
-    type Data = (u64, Cfg<'a>);
+impl Patch for DesktopFileCfgPatch {
+    type Data = (u64, Cfg);
 
     fn diff(old: Self::Data, new: Self::Data) -> Self {
         Self {
@@ -490,13 +489,13 @@ impl<'a> Patch for DesktopFileCfgPatch<'a> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
-struct LinkPatch<'a> {
+struct LinkPatch {
     id: u64,
-    path: Option<Cow<'a, Path>>,
+    path: Option<PathBuf>,
 }
 
-impl<'a> Patch for LinkPatch<'a> {
-    type Data = (u64, Link<'a>);
+impl Patch for LinkPatch {
+    type Data = (u64, Link);
 
     fn diff(old: Self::Data, new: Self::Data) -> Self {
         Self {
@@ -533,19 +532,19 @@ impl<'a> Applier<'a> {
         self.patch_recorder.log(&crate::PatchEvent::Panel(event))
     }
 
-    fn rc_file_path(&self, plugin_id: &PluginId<'_>) -> PathBuf {
+    fn rc_file_path(&self, plugin_id: &PluginId) -> PathBuf {
         self.dir
             .join(format!("{}-{}.rc", plugin_id.r#type, plugin_id.id))
     }
 
-    fn desktop_dir_path(&self, plugin_id: &PluginId<'_>) -> PathBuf {
+    fn desktop_dir_path(&self, plugin_id: &PluginId) -> PathBuf {
         self.dir
             .join(format!("{}-{}", plugin_id.r#type, plugin_id.id))
     }
 
     fn desktop_file_path(
         &self,
-        plugin_id: &PluginId<'_>,
+        plugin_id: &PluginId,
         desktop_id: u64,
     ) -> PathBuf {
         self.dir.join(format!(
@@ -554,7 +553,7 @@ impl<'a> Applier<'a> {
         ))
     }
 
-    fn rc_cfg_applier(&mut self, plugin_id: &PluginId<'_>) -> CfgApplier<'_> {
+    fn rc_cfg_applier(&mut self, plugin_id: &PluginId) -> CfgApplier<'_> {
         CfgApplier::new(
             self.dry_run,
             self.patch_recorder,
@@ -564,7 +563,7 @@ impl<'a> Applier<'a> {
 
     fn desktop_cfg_applier(
         &mut self,
-        plugin_id: &PluginId<'_>,
+        plugin_id: &PluginId,
         desktop_id: u64,
     ) -> CfgApplier<'_> {
         CfgApplier::new(
@@ -574,7 +573,7 @@ impl<'a> Applier<'a> {
         )
     }
 
-    fn remove_plugin(&mut self, plugin_id: &PluginId<'_>) -> Result<()> {
+    fn remove_plugin(&mut self, plugin_id: &PluginId) -> Result<()> {
         let rc_file_path = self.rc_file_path(plugin_id);
         let desktop_dir_path = self.desktop_dir_path(plugin_id);
         if rc_file_path.is_file() {
@@ -601,7 +600,7 @@ impl<'a> Applier<'a> {
         Ok(())
     }
 
-    fn create_desktop_dir(&mut self, plugin_id: &PluginId<'_>) -> Result<()> {
+    fn create_desktop_dir(&mut self, plugin_id: &PluginId) -> Result<()> {
         let path = self.desktop_dir_path(plugin_id);
         self.log(PatchEvent::CreateDesktopDir { path: &path })
             .context("error logging create desktop dir")?;
@@ -613,7 +612,7 @@ impl<'a> Applier<'a> {
 
     fn link_desktop_file(
         &mut self,
-        plugin_id: &PluginId<'_>,
+        plugin_id: &PluginId,
         desktop_id: u64,
         target_path: &Path,
     ) -> Result<()> {
@@ -641,7 +640,7 @@ impl<'a> Applier<'a> {
 
     fn remove_desktop_file(
         &mut self,
-        plugin_id: &PluginId<'_>,
+        plugin_id: &PluginId,
         desktop_id: u64,
     ) -> Result<()> {
         let path = self.desktop_file_path(plugin_id, desktop_id);
@@ -672,14 +671,14 @@ pub enum PatchEvent<'a> {
     RemoveDesktopFile { path: &'a Path },
 }
 
-impl PanelPatch<'_> {
+impl PanelPatch {
     pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         self.plugin_configs.apply(applier)?;
         Ok(())
     }
 }
 
-impl PluginConfigsPatch<'_> {
+impl PluginConfigsPatch {
     fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         for plugin_config_patch in self.0.changed.into_values() {
             plugin_config_patch.apply(applier)?;
@@ -694,7 +693,7 @@ impl PluginConfigsPatch<'_> {
     }
 }
 
-impl PluginConfig<'_> {
+impl PluginConfig {
     fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         match self.file {
             PluginConfigFile::Rc(cfg) => {
@@ -711,11 +710,11 @@ impl PluginConfig<'_> {
     }
 }
 
-impl DesktopFile<'_> {
+impl DesktopFile {
     fn apply(
         self,
         applier: &mut Applier<'_>,
-        plugin_id: &PluginId<'_>,
+        plugin_id: &PluginId,
     ) -> Result<()> {
         match self.content {
             DesktopFileContent::Cfg(cfg) => {
@@ -728,7 +727,7 @@ impl DesktopFile<'_> {
     }
 }
 
-impl PluginConfigPatch<'_> {
+impl PluginConfigPatch {
     fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         match self {
             Self::Rc(rc_patch) => rc_patch.apply(applier),
@@ -744,14 +743,14 @@ impl PluginConfigPatch<'_> {
     }
 }
 
-impl RcPatch<'_> {
+impl RcPatch {
     fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         self.cfg.apply(&mut applier.rc_cfg_applier(&self.id))?;
         Ok(())
     }
 }
 
-impl DesktopDirPatch<'_> {
+impl DesktopDirPatch {
     fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         for desktop_file_patch in self.files.changed.into_values() {
             desktop_file_patch.apply(applier, &self.id)?;
@@ -766,11 +765,11 @@ impl DesktopDirPatch<'_> {
     }
 }
 
-impl DesktopFilePatch<'_> {
+impl DesktopFilePatch {
     fn apply(
         self,
         applier: &mut Applier<'_>,
-        plugin_id: &PluginId<'_>,
+        plugin_id: &PluginId,
     ) -> Result<()> {
         match self {
             Self::Cfg(desktop_file_cfg_patch) => {
@@ -784,22 +783,22 @@ impl DesktopFilePatch<'_> {
     }
 }
 
-impl DesktopFileCfgPatch<'_> {
+impl DesktopFileCfgPatch {
     fn apply(
         self,
         applier: &mut Applier<'_>,
-        plugin_id: &PluginId<'_>,
+        plugin_id: &PluginId,
     ) -> Result<()> {
         self.cfg
             .apply(&mut applier.desktop_cfg_applier(plugin_id, self.id))
     }
 }
 
-impl LinkPatch<'_> {
+impl LinkPatch {
     fn apply(
         self,
         applier: &mut Applier<'_>,
-        plugin_id: &PluginId<'_>,
+        plugin_id: &PluginId,
     ) -> Result<()> {
         if let Some(path) = self.path {
             applier.remove_desktop_file(plugin_id, self.id)?;

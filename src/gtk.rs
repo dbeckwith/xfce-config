@@ -12,12 +12,12 @@ use std::{
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Gtk<'a> {
+pub struct Gtk {
     #[serde(default, skip_serializing_if = "Settings::is_empty")]
-    settings: Settings<'a>,
+    settings: Settings,
 }
 
-impl Gtk<'_> {
+impl Gtk {
     pub fn is_empty(&self) -> bool {
         self.settings.is_empty()
     }
@@ -25,22 +25,22 @@ impl Gtk<'_> {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct Settings<'a>(Option<Cfg<'a>>);
+struct Settings(Option<Cfg>);
 
-impl Settings<'_> {
+impl Settings {
     fn is_empty(&self) -> bool {
         self.0.is_none()
     }
 }
 
-impl Gtk<'static> {
+impl Gtk {
     pub fn read(dir: &Path) -> Result<Self> {
         let settings = Settings::read(dir)?;
         Ok(Self { settings })
     }
 }
 
-impl Settings<'static> {
+impl Settings {
     pub fn read(dir: &Path) -> Result<Self> {
         let file = match fs::File::open(dir.join("settings.ini")) {
             Ok(file) => Ok(Some(file)),
@@ -60,21 +60,21 @@ impl Settings<'static> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct GtkPatch<'a> {
+pub struct GtkPatch {
     #[serde(skip_serializing_if = "SettingsPatch::is_empty")]
-    settings: SettingsPatch<'a>,
+    settings: SettingsPatch,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-enum SettingsPatch<'a> {
-    Added(Cfg<'a>),
-    Changed(CfgPatch<'a>),
+enum SettingsPatch {
+    Added(Cfg),
+    Changed(CfgPatch),
     Unchanged,
 }
 
-impl<'a> GtkPatch<'a> {
-    pub fn diff(old: Gtk<'a>, new: Gtk<'a>) -> Self {
+impl GtkPatch {
+    pub fn diff(old: Gtk, new: Gtk) -> Self {
         Self {
             settings: SettingsPatch::diff(old.settings, new.settings),
         }
@@ -85,8 +85,8 @@ impl<'a> GtkPatch<'a> {
     }
 }
 
-impl<'a> SettingsPatch<'a> {
-    fn diff(old: Settings<'a>, new: Settings<'a>) -> Self {
+impl SettingsPatch {
+    fn diff(old: Settings, new: Settings) -> Self {
         match (old.0, new.0) {
             (Some(old_content), Some(new_content)) => {
                 let diff = CfgPatch::diff(old_content, new_content);
@@ -145,14 +145,14 @@ impl<'a> Applier<'a> {
     }
 }
 
-impl GtkPatch<'_> {
+impl GtkPatch {
     pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         self.settings.apply(applier)?;
         Ok(())
     }
 }
 
-impl SettingsPatch<'_> {
+impl SettingsPatch {
     fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         match self {
             Self::Added(cfg) => {
