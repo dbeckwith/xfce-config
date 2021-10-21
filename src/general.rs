@@ -2,7 +2,7 @@ use crate::{
     cfg::{Applier as CfgApplier, Cfg, CfgPatch},
     json::{Applier as JsonApplier, Json, JsonPatch},
     open_file,
-    serde::IdMap,
+    serde::{IdMap, RelativePathBuf},
     PatchRecorder,
 };
 use anyhow::{bail, Context, Result};
@@ -62,8 +62,7 @@ impl crate::serde::Id for Config {
 #[serde(rename_all = "kebab-case")]
 struct ConfigId {
     root: ConfigRoot,
-    // TODO: assert that path is relative
-    path: PathBuf,
+    path: RelativePathBuf,
 }
 
 impl fmt::Display for ConfigId {

@@ -4,6 +4,8 @@ use std::{
     fmt,
     iter::{self, FromIterator},
     marker::PhantomData,
+    ops::Deref,
+    path::{Path, PathBuf},
 };
 
 pub trait Id {
@@ -90,5 +92,86 @@ where
         }
 
         deserializer.deserialize_seq(Visitor(PhantomData))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct RelativePathBuf(PathBuf);
+
+#[derive(Debug)]
+pub struct RelativePathBufError {
+    _priv: (),
+}
+
+impl fmt::Display for RelativePathBufError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "path is not relative")
+    }
+}
+
+impl std::error::Error for RelativePathBufError {}
+
+impl RelativePathBuf {
+    pub fn new(path: PathBuf) -> Result<Self, RelativePathBufError> {
+        if path.is_relative() {
+            Ok(Self(path))
+        } else {
+            Err(RelativePathBufError { _priv: () })
+        }
+    }
+}
+
+impl Deref for RelativePathBuf {
+    type Target = PathBuf;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<PathBuf> for RelativePathBuf {
+    fn as_ref(&self) -> &PathBuf {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for RelativePathBuf {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl ser::Serialize for RelativePathBuf {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> de::Deserialize<'de> for RelativePathBuf {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = RelativePathBuf;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "relative path")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                RelativePathBuf::new(Path::new(v).to_owned()).map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_seq(Visitor)
     }
 }
