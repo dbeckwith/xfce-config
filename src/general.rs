@@ -5,11 +5,12 @@ use crate::{
     serde::IdMap,
     PatchRecorder,
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
     collections::BTreeMap,
+    fmt,
     io,
     path::{Path, PathBuf},
 };
@@ -63,6 +64,20 @@ struct ConfigId {
     root: ConfigRoot,
     // TODO: assert that path is relative
     path: PathBuf,
+}
+
+impl fmt::Display for ConfigId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{{{}}}{}{}",
+            match self.root {
+                ConfigRoot::Config => "config",
+            },
+            std::path::MAIN_SEPARATOR,
+            self.path.display()
+        )
+    }
 }
 
 impl ConfigId {
@@ -144,10 +159,11 @@ pub struct GeneralPatch {
 }
 
 impl GeneralPatch {
-    pub fn diff(old: General, new: General) -> Self {
-        Self {
-            configs: ConfigsPatch::diff(old.configs, new.configs),
-        }
+    pub fn diff(old: General, new: General) -> Result<Self> {
+        Ok(Self {
+            configs: ConfigsPatch::diff(old.configs, new.configs)
+                .context("error diffing configs")?,
+        })
     }
 
     pub fn is_empty(&self) -> bool {
@@ -165,12 +181,15 @@ struct ConfigsPatch {
 }
 
 impl ConfigsPatch {
-    fn diff(mut old: Configs, new: Configs) -> Self {
+    fn diff(mut old: Configs, new: Configs) -> Result<Self> {
         let mut changed = BTreeMap::new();
         let mut added = Vec::new();
         for (key, new_value) in (new.0).0.into_iter() {
             if let Some(old_value) = (old.0).0.remove(&key) {
-                let patch = ConfigPatch::diff(old_value, new_value);
+                let patch = ConfigPatch::diff(old_value, new_value)
+                    .with_context(|| {
+                        format!("error diffing config for {}", key)
+                    })?;
                 if !patch.is_empty() {
                     changed.insert(key, patch);
                 }
@@ -178,7 +197,7 @@ impl ConfigsPatch {
                 added.push(new_value);
             }
         }
-        Self { changed, added }
+        Ok(Self { changed, added })
     }
 
     fn is_empty(&self) -> bool {
@@ -194,11 +213,11 @@ struct ConfigPatch {
 }
 
 impl ConfigPatch {
-    fn diff(old: Config, new: Config) -> Self {
-        Self {
+    fn diff(old: Config, new: Config) -> Result<Self> {
+        Ok(Self {
             id: old.id,
-            content: ConfigContentPatch::diff(old.content, new.content),
-        }
+            content: ConfigContentPatch::diff(old.content, new.content)?,
+        })
     }
 
     fn is_empty(&self) -> bool {
@@ -214,18 +233,15 @@ enum ConfigContentPatch {
 }
 
 impl ConfigContentPatch {
-    fn diff(old: ConfigContent, new: ConfigContent) -> Self {
+    fn diff(old: ConfigContent, new: ConfigContent) -> Result<Self> {
         match (old, new) {
             (ConfigContent::Cfg(old), ConfigContent::Cfg(new)) => {
-                Self::Cfg(CfgPatch::diff(old, new))
+                Ok(Self::Cfg(CfgPatch::diff(old, new)))
             },
             (ConfigContent::Json(old), ConfigContent::Json(new)) => {
-                Self::Json(JsonPatch::diff(old, new))
+                Ok(Self::Json(JsonPatch::diff(old, new)))
             },
-            _ => {
-                // TODO: return error
-                panic!("config file type changed")
-            },
+            _ => bail!("new config content type does not match existing type"),
         }
     }
 

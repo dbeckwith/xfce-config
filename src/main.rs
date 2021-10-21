@@ -50,7 +50,8 @@ fn main() -> Result<()> {
     )
     .context("error writing old.json")?;
 
-    let diff = XfceConfigPatch::diff(old_config, new_config);
+    let diff = XfceConfigPatch::diff(old_config, new_config)
+        .context("error diffing configs")?;
     serde_json::to_writer(
         fs::File::create(log_dir.join("diff.json"))
             .context("error creating diff.json")?,
