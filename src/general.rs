@@ -41,7 +41,6 @@ impl Configs {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct Config {
-    #[serde(flatten)]
     id: ConfigId,
     #[serde(flatten)]
     content: ConfigContent,
