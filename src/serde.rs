@@ -172,6 +172,6 @@ impl<'de> de::Deserialize<'de> for RelativePathBuf {
             }
         }
 
-        deserializer.deserialize_seq(Visitor)
+        deserializer.deserialize_str(Visitor)
     }
 }
