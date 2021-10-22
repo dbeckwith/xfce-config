@@ -6,7 +6,7 @@ use crate::{
     PatchRecorder,
 };
 use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::{ser, Deserialize, Serialize};
 use std::{
     borrow::Cow,
     collections::BTreeMap,
@@ -56,9 +56,7 @@ impl crate::serde::Id for Config {
     }
 }
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct ConfigId {
     root: ConfigRoot,
@@ -76,6 +74,15 @@ impl fmt::Display for ConfigId {
             std::path::MAIN_SEPARATOR,
             self.path.display()
         )
+    }
+}
+
+impl ser::Serialize for ConfigId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        serializer.collect_str(self)
     }
 }
 

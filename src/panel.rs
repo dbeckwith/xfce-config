@@ -46,6 +46,7 @@ struct PluginConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 struct PluginId {
     r#type: String,
     id: u64,
@@ -62,7 +63,7 @@ impl ser::Serialize for PluginId {
     where
         S: ser::Serializer,
     {
-        serializer.collect_str(&format_args!("{}-{}", self.r#type, self.id))
+        serializer.collect_str(self)
     }
 }
 
