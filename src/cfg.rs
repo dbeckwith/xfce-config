@@ -6,7 +6,7 @@ use std::{
     collections::BTreeMap,
     fs,
     io::{self, BufRead, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -211,11 +211,9 @@ impl<'a> Applier<'a> {
             .log(&crate::PatchEvent::Cfg { content: cfg })
             .context("error logging CFG write")?;
         if !self.dry_run {
-            let tmp = std::env::temp_dir().join(
-                self.path
-                    .file_name()
-                    .context("CFG file path has no file name")?,
-            );
+            let mut tmp = self.path.clone().into_owned().into_os_string();
+            tmp.push(".new");
+            let tmp = PathBuf::from(tmp);
             cfg.write(
                 fs::File::create(&tmp)
                     .context("error creating temporary CFG file")?,
