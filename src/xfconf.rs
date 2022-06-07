@@ -132,7 +132,7 @@ impl Channels {
                     })
                 })
                 .with_context(|| {
-                    format!("unknown value type {}", variant.type_().to_str())
+                    format!("unknown value type {}", variant.type_().as_str())
                 })
                 .and_then(std::convert::identity)
         }
@@ -150,7 +150,7 @@ impl Channels {
                 .with_context(|| {
                     format!(
                         "unknown array value type {}",
-                        variant.type_().to_str()
+                        variant.type_().as_str()
                     )
                 })
         }
@@ -968,7 +968,7 @@ impl_simple_patch_apply!(String, set_string);
 impl_simple_patch_apply!(Vec<Value>, set_array);
 
 fn variant_to_json(v: glib::Variant) -> Result<serde_json::Value> {
-    match v.type_().to_str() {
+    match v.type_().as_str() {
         "v" => variant_to_json(v.as_variant().unwrap()),
         "b" => Ok(serde_json::Value::from(v.get::<bool>().unwrap())),
         "i" => Ok(serde_json::Value::from(v.get::<i32>().unwrap())),

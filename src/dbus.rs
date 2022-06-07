@@ -7,14 +7,14 @@ pub struct DBus {
 
 impl DBus {
     pub fn new(destination: &'static str, path: &'static str) -> Result<Self> {
-        let proxy = gio::DBusProxy::for_bus_sync::<gio::Cancellable>(
+        let proxy = gio::DBusProxy::for_bus_sync(
             gio::BusType::Session,
             gio::DBusProxyFlags::NONE,
             None,
             destination,
             path,
             destination,
-            None,
+            None::<&gio::Cancellable>,
         )
         .with_context(|| {
             format!("error creating dbus proxy for {}", destination)
@@ -42,13 +42,13 @@ impl DBus {
         method: &'static str,
         args: Option<glib::variant::Variant>,
     ) -> Result<glib::Variant> {
-        gio::prelude::DBusProxyExt::call_sync::<gio::Cancellable>(
+        gio::prelude::DBusProxyExt::call_sync(
             &self.proxy,
             method,
             args.as_ref(),
             gio::DBusCallFlags::NONE,
             -1,
-            None,
+            None::<&gio::Cancellable>,
         )
         .with_context(|| {
             format!(
