@@ -1,5 +1,6 @@
 use crate::{dbus::DBus, serde::IdMap, PatchRecorder};
 use anyhow::{anyhow, bail, Context, Error, Result};
+use glib::variant::DictEntry;
 use serde::{de, ser, Deserialize, Serialize};
 use std::{
     collections::{btree_map, BTreeMap, BTreeSet},
@@ -107,7 +108,7 @@ impl Channels {
             .try_child_value(0)
             .context("ListChannels had empty return value")?;
 
-        fn value_from_variant(variant: glib::Variant) -> Result<TypedValue> {
+        fn value_from_variant(variant: &glib::Variant) -> Result<TypedValue> {
             variant
                 .get::<bool>()
                 .map(TypedValue::Bool)
@@ -166,10 +167,13 @@ impl Channels {
                     .context("GetAllProperties had empty return value")?
                     .iter()
                     .map(|prop| {
-                        let (path, value) =
-                            prop.try_get::<(String, glib::Variant)>()?;
+                        let entry = prop
+                            .try_get::<DictEntry<String, glib::Variant>>()
+                            .context("error getting prop entry")?;
+                        let path = entry.key();
+                        let value = entry.value();
                         let value = value_from_variant(value)?;
-                        Ok((path, value))
+                        Ok((path.clone(), value))
                     })
                     .collect::<Result<Vec<_>>>()?;
                 let mut props = Properties::default();
