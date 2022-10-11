@@ -224,6 +224,7 @@ impl<'a> Applier<'a> {
 impl<'a, 'b> SchemaApplier<'a, 'b> {
     fn new(applier: &'a mut Applier<'b>, id: &'a str) -> Self {
         let settings = gio::Settings::new(id);
+        settings.delay();
         Self {
             applier,
             id,
@@ -253,6 +254,12 @@ impl<'a, 'b> SchemaApplier<'a, 'b> {
     }
 }
 
+impl Drop for SchemaApplier<'_, '_> {
+    fn drop(&mut self) {
+        self.settings.apply()
+    }
+}
+
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum PatchEvent<'a> {
@@ -267,6 +274,7 @@ pub enum PatchEvent<'a> {
 impl GSettingsPatch {
     pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         self.schemas.apply(applier)?;
+        gio::Settings::sync();
         Ok(())
     }
 }
