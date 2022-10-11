@@ -1,6 +1,6 @@
 use crate::{serde::IdMap, PatchRecorder};
 use anyhow::{Context, Result};
-use gio::prelude::{SettingsExt, SettingsExtManual};
+use gio::prelude::SettingsExt;
 use serde::{de, ser, Deserialize, Serialize};
 use std::{collections::BTreeMap, fmt};
 
@@ -244,7 +244,7 @@ impl<'a, 'b> SchemaApplier<'a, 'b> {
             }))
             .context("error logging gsettings set")?;
         if !self.applier.dry_run {
-            self.settings.set(key, &value.0).with_context(|| {
+            self.settings.set_value(key, &value.0).with_context(|| {
                 format!(
                     "error setting gsettings value for schema {} and key {}",
                     self.id, key
