@@ -275,7 +275,9 @@ pub enum PatchEvent<'a> {
 impl GSettingsPatch {
     pub fn apply(self, applier: &mut Applier<'_>) -> Result<()> {
         self.schemas.apply(applier)?;
-        gio::Settings::sync();
+        if !applier.dry_run {
+            gio::Settings::sync();
+        }
         Ok(())
     }
 }
