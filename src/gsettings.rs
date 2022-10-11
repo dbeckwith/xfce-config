@@ -77,7 +77,7 @@ impl Schema {
             .list_keys()
             .into_iter()
             .map(|key| {
-                let value = settings.get::<glib::Variant>(&key);
+                let value = settings.value(&key);
                 Ok((key.to_string(), Value(value)))
             })
             .collect::<Result<BTreeMap<_, _>>>()?;
