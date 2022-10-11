@@ -1,7 +1,4 @@
-use crate::{
-    serde::{variant_to_json, IdMap},
-    PatchRecorder,
-};
+use crate::{serde::IdMap, PatchRecorder};
 use anyhow::{Context, Result};
 use gio::prelude::{SettingsExt, SettingsExtManual};
 use serde::{de, ser, Deserialize, Serialize};
@@ -238,10 +235,9 @@ impl<'a, 'b> SchemaApplier<'a, 'b> {
             .log(&crate::PatchEvent::GSettings(PatchEvent::Set {
                 schema_id: self.id,
                 key,
-                value: variant_to_json(value.0.clone())
-                    .context("error converting gsettings value to JSON")?,
+                value: value.0.print(false).to_string(),
             }))
-            .context("error logging xfconf call")?;
+            .context("error logging gsettings set")?;
         if !self.applier.dry_run {
             self.settings.set(key, &value.0).with_context(|| {
                 format!(
@@ -267,7 +263,7 @@ pub enum PatchEvent<'a> {
     Set {
         schema_id: &'a str,
         key: &'a str,
-        value: serde_json::Value,
+        value: String,
     },
 }
 
