@@ -1,4 +1,8 @@
-use crate::{dbus::DBus, serde::IdMap, PatchRecorder};
+use crate::{
+    dbus::DBus,
+    serde::{variant_to_json, IdMap},
+    PatchRecorder,
+};
 use anyhow::{anyhow, bail, Context, Error, Result};
 use glib::variant::DictEntry;
 use serde::{de, ser, Deserialize, Serialize};
@@ -303,7 +307,7 @@ impl fmt::Display for ClearPath {
     }
 }
 
-impl<'de: 'a, 'a> de::Deserialize<'de> for ClearPath {
+impl<'de> de::Deserialize<'de> for ClearPath {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -970,23 +974,6 @@ impl_simple_patch_apply!(u32, set_uint);
 impl_simple_patch_apply!(f64, set_double);
 impl_simple_patch_apply!(String, set_string);
 impl_simple_patch_apply!(Vec<Value>, set_array);
-
-fn variant_to_json(v: glib::Variant) -> Result<serde_json::Value> {
-    match v.type_().as_str() {
-        "v" => variant_to_json(v.as_variant().unwrap()),
-        "b" => Ok(serde_json::Value::from(v.get::<bool>().unwrap())),
-        "i" => Ok(serde_json::Value::from(v.get::<i32>().unwrap())),
-        "u" => Ok(serde_json::Value::from(v.get::<u32>().unwrap())),
-        "d" => Ok(serde_json::Value::from(v.get::<f64>().unwrap())),
-        "s" => Ok(serde_json::Value::from(v.get::<String>().unwrap())),
-        r#type if r#type.starts_with('a') || r#type.starts_with('(') => v
-            .iter()
-            .map(variant_to_json)
-            .collect::<Result<Vec<_>>>()
-            .map(Into::into),
-        r#type => bail!("bad arg type {}", r#type),
-    }
-}
 
 #[cfg(test)]
 mod tests {

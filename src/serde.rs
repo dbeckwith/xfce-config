@@ -1,3 +1,4 @@
+use anyhow::{bail, Result};
 use serde::{de, ser};
 use std::{
     collections::BTreeMap,
@@ -173,5 +174,22 @@ impl<'de> de::Deserialize<'de> for RelativePathBuf {
         }
 
         deserializer.deserialize_str(Visitor)
+    }
+}
+
+pub fn variant_to_json(v: glib::Variant) -> Result<serde_json::Value> {
+    match v.type_().as_str() {
+        "v" => variant_to_json(v.as_variant().unwrap()),
+        "b" => Ok(serde_json::Value::from(v.get::<bool>().unwrap())),
+        "i" => Ok(serde_json::Value::from(v.get::<i32>().unwrap())),
+        "u" => Ok(serde_json::Value::from(v.get::<u32>().unwrap())),
+        "d" => Ok(serde_json::Value::from(v.get::<f64>().unwrap())),
+        "s" => Ok(serde_json::Value::from(v.get::<String>().unwrap())),
+        r#type if r#type.starts_with('a') || r#type.starts_with('(') => v
+            .iter()
+            .map(variant_to_json)
+            .collect::<Result<Vec<_>>>()
+            .map(Into::into),
+        r#type => bail!("bad arg type {}", r#type),
     }
 }

@@ -4,6 +4,7 @@
 mod cfg;
 mod dbus;
 mod general;
+mod gsettings;
 mod gtk;
 mod json;
 mod panel;
@@ -31,6 +32,8 @@ pub struct XfceConfig {
     gtk: gtk::Gtk,
     #[serde(default, skip_serializing_if = "general::General::is_empty")]
     general: general::General,
+    #[serde(default, skip_serializing_if = "gsettings::GSettings::is_empty")]
+    gsettings: gsettings::GSettings,
 }
 
 #[derive(Debug, Serialize)]
@@ -44,6 +47,8 @@ pub struct XfceConfigPatch {
     gtk: gtk::GtkPatch,
     #[serde(skip_serializing_if = "general::GeneralPatch::is_empty")]
     general: general::GeneralPatch,
+    #[serde(skip_serializing_if = "gsettings::GSettingsPatch::is_empty")]
+    gsettings: gsettings::GSettingsPatch,
 }
 
 impl XfceConfigPatch {
@@ -54,11 +59,19 @@ impl XfceConfigPatch {
             gtk: gtk::GtkPatch::diff(old.gtk, new.gtk),
             general: general::GeneralPatch::diff(old.general, new.general)
                 .context("error diffing general")?,
+            gsettings: gsettings::GSettingsPatch::diff(
+                old.gsettings,
+                new.gsettings,
+            ),
         })
     }
 
     pub fn is_empty(&self) -> bool {
-        self.xfconf.is_empty() && self.panel.is_empty() && self.gtk.is_empty()
+        self.xfconf.is_empty()
+            && self.panel.is_empty()
+            && self.gtk.is_empty()
+            && self.general.is_empty()
+            && self.gsettings.is_empty()
     }
 }
 
@@ -85,11 +98,14 @@ impl XfceConfig {
             gtk::Gtk::read(gtk_config_dir).context("error loading gtk data")?;
         let general = general::General::read(&new_config.general, config_dir)
             .context("error loading general data")?;
+        let gsettings = gsettings::GSettings::load(&new_config.gsettings)
+            .context("error loading gsettings data")?;
         Ok(Self {
             xfconf,
             panel,
             gtk,
             general,
+            gsettings,
         })
     }
 }
@@ -161,6 +177,12 @@ impl XfceConfigPatch {
                 applier.config_dir.clone(),
             ))
             .context("error applying general")?;
+        self.gsettings
+            .apply(&mut gsettings::Applier::new(
+                applier.dry_run,
+                &mut applier.patch_recorder,
+            ))
+            .context("error applying gsettings")?;
 
         // restart panel if its config changed
         if panel_config_changed && !applier.dry_run {
@@ -190,6 +212,7 @@ impl PatchRecorder {
 #[serde(tag = "type", content = "value", rename_all = "kebab-case")]
 enum PatchEvent<'a> {
     Channel(xfconf::PatchEvent),
+    GSettings(gsettings::PatchEvent<'a>),
     Panel(panel::PatchEvent<'a>),
     #[serde(rename_all = "kebab-case")]
     Cfg {

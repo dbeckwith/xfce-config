@@ -25,7 +25,7 @@ impl DBus {
     pub fn call(
         &mut self,
         method: &'static str,
-        args: impl glib::variant::ToVariant,
+        args: impl glib::ToVariant,
     ) -> Result<glib::Variant> {
         self.call_inner(method, Some(args.to_variant()))
     }
@@ -40,7 +40,7 @@ impl DBus {
     fn call_inner(
         &mut self,
         method: &'static str,
-        args: Option<glib::variant::Variant>,
+        args: Option<glib::Variant>,
     ) -> Result<glib::Variant> {
         gio::prelude::DBusProxyExt::call_sync(
             &self.proxy,
