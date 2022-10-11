@@ -103,7 +103,12 @@ impl<'de> de::Deserialize<'de> for Value {
             where
                 E: de::Error,
             {
-                glib::Variant::parse(None, v).map(Value).map_err(E::custom)
+                glib::Variant::parse(None, v).map(Value).map_err(|error| {
+                    E::custom(format_args!(
+                        "error parsing glib variant: {}",
+                        error
+                    ))
+                })
             }
         }
 
