@@ -157,7 +157,7 @@ impl<'de> de::Deserialize<'de> for RelativePathBuf {
     {
         struct Visitor;
 
-        impl<'de> de::Visitor<'de> for Visitor {
+        impl de::Visitor<'_> for Visitor {
             type Value = RelativePathBuf;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

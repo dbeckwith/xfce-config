@@ -1,7 +1,7 @@
 use crate::{
+    PatchRecorder,
     cfg::{Applier as CfgApplier, Cfg, CfgPatch},
     open_file,
-    PatchRecorder,
 };
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};

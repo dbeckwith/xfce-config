@@ -8,18 +8,18 @@ members = [
 name = "xfce-config"
 version = "0.4.4"
 authors = ["Daniel Beckwith <djbsnx@gmail.com>"]
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-anyhow = "1.0.57"
-cfg-if = "1.0.0"
-chrono = "0.4.19"
+anyhow = "1.0.98"
+cfg-if = "1.0.1"
+chrono = "0.4.41"
 dirs2 = "3.0.1"
-gio = "0.15.11"
-glib = "0.15.11"
+gio = "0.20.12"
+glib = "0.20.12"
 im = "15.1.0"
-serde = { version = "1.0.137", features = ["derive"] }
-serde_json = "1.0.81"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
 structopt = "0.3.26"
 
 [dev-dependencies]

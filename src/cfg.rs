@@ -1,5 +1,5 @@
 use crate::PatchRecorder;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
@@ -172,7 +172,7 @@ impl Patch for StrPatch {
 
     fn diff(old: Self::Data, new: Self::Data) -> Self {
         Self {
-            value: (old != new).then(|| new),
+            value: (old != new).then_some(new),
         }
     }
 

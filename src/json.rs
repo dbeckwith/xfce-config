@@ -179,7 +179,7 @@ where
 {
     fn diff(old: T, new: T) -> Self {
         Self {
-            value: (old != new).then(|| new),
+            value: (old != new).then_some(new),
         }
     }
 

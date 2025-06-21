@@ -1,11 +1,11 @@
 use crate::{
+    PatchRecorder,
     cfg::{Applier as CfgApplier, Cfg, CfgPatch},
     serde::IdMap,
-    PatchRecorder,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use cfg_if::cfg_if;
-use serde::{ser, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, ser};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
@@ -496,7 +496,7 @@ impl Patch for LinkPatch {
     fn diff(old: Self::Data, new: Self::Data) -> Self {
         Self {
             id: new.0,
-            path: (old.1.path != new.1.path).then(|| new.1.path),
+            path: (old.1.path != new.1.path).then_some(new.1.path),
         }
     }
 
@@ -717,7 +717,7 @@ impl DesktopFile {
                 cfg.apply(&mut applier.desktop_cfg_applier(plugin_id, self.id))
             },
             DesktopFileContent::Link(link) => {
-                applier.link_desktop_file(plugin_id, self.id, &*link.path)
+                applier.link_desktop_file(plugin_id, self.id, &link.path)
             },
         }
     }
@@ -798,7 +798,7 @@ impl LinkPatch {
     ) -> Result<()> {
         if let Some(path) = self.path {
             applier.remove_desktop_file(plugin_id, self.id)?;
-            applier.link_desktop_file(plugin_id, self.id, &*path)?;
+            applier.link_desktop_file(plugin_id, self.id, &path)?;
         }
         Ok(())
     }

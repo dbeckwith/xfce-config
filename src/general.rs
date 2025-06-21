@@ -1,12 +1,12 @@
 use crate::{
+    PatchRecorder,
     cfg::{Applier as CfgApplier, Cfg, CfgPatch},
     json::{Applier as JsonApplier, Json, JsonPatch},
     open_file,
     serde::{IdMap, RelativePathBuf},
-    PatchRecorder,
 };
-use anyhow::{bail, Context, Result};
-use serde::{ser, Deserialize, Serialize};
+use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Serialize, ser};
 use std::{
     borrow::Cow,
     collections::BTreeMap,

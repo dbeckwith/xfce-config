@@ -25,7 +25,7 @@ impl DBus {
     pub fn call(
         &mut self,
         method: &'static str,
-        args: impl glib::ToVariant,
+        args: impl glib::variant::ToVariant,
     ) -> Result<glib::Variant> {
         self.call_inner(method, Some(args.to_variant()))
     }

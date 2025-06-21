@@ -1,9 +1,9 @@
-use crate::{dbus::DBus, serde::IdMap, PatchRecorder};
-use anyhow::{anyhow, bail, Context, Error, Result};
+use crate::{PatchRecorder, dbus::DBus, serde::IdMap};
+use anyhow::{Context, Error, Result, anyhow, bail};
 use glib::variant::DictEntry;
-use serde::{de, ser, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de, ser};
 use std::{
-    collections::{btree_map, BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, btree_map},
     fmt,
     iter,
     str::FromStr,
@@ -245,7 +245,7 @@ impl FromStr for ClearPath {
                         (part, false)
                     };
                 let prefix = if let Some(prefix) = part.strip_suffix('*') {
-                    (!prefix.is_empty()).then(|| prefix)
+                    (!prefix.is_empty()).then_some(prefix)
                 } else {
                     bail!("missing `*` in final prop specifier")
                 };
@@ -310,7 +310,7 @@ impl<'de> de::Deserialize<'de> for ClearPath {
     {
         struct Visitor;
 
-        impl<'de> de::Visitor<'de> for Visitor {
+        impl de::Visitor<'_> for Visitor {
             type Value = ClearPath;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -456,6 +456,7 @@ enum PropertiesCtx {
 }
 
 impl ClearPath {
+    #[expect(clippy::type_complexity)]
     fn get_remove_keys_filter(
         &self,
         path: &DiffPath,
@@ -654,7 +655,7 @@ where
 {
     fn diff(old: T, new: T) -> Self {
         Self {
-            value: (old != new).then(|| new),
+            value: (old != new).then_some(new),
         }
     }
 
@@ -705,10 +706,11 @@ impl<'a> Applier<'a> {
     fn path_to_channel_property(path: &ApplyPath) -> (&str, String) {
         (
             &*path.channel,
-            path.props
-                .iter()
-                .map(|prop| format!("/{}", prop))
-                .collect::<String>(),
+            path.props.iter().fold(String::new(), |mut path, prop| {
+                path.push('/');
+                path.push_str(prop);
+                path
+            }),
         )
     }
 

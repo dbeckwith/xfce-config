@@ -1,7 +1,7 @@
-use crate::{serde::IdMap, PatchRecorder};
+use crate::{PatchRecorder, serde::IdMap};
 use anyhow::{Context, Result};
 use gio::prelude::SettingsExt;
-use serde::{de, ser, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de, ser};
 use std::{collections::BTreeMap, fmt};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -48,7 +48,6 @@ impl Schemas {
         let schemas = (new_schemas.0)
             .0
             .keys()
-            .into_iter()
             .map(|schema_id| {
                 Schema::load(schema_id.clone()).with_context(|| {
                     format!("error loading schema {}", schema_id)
@@ -92,7 +91,7 @@ impl<'de> de::Deserialize<'de> for Value {
     {
         struct Visitor;
 
-        impl<'de> de::Visitor<'de> for Visitor {
+        impl de::Visitor<'_> for Visitor {
             type Value = Value;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

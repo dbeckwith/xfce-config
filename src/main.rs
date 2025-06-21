@@ -85,7 +85,7 @@ fn rotating_log_dir(dir: PathBuf) -> Result<PathBuf> {
                 .context("error reading log dir entry")
                 .map(|entry| {
                     let path = entry.path();
-                    path.is_dir().then(|| path)
+                    path.is_dir().then_some(path)
                 })
                 .transpose()
         })
